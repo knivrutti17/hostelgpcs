@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "979674054918",
+    "project_id": "gpcs-hostel-portal",
+    "storage_bucket": "gpcs-hostel-portal.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:979674054918:android:0ed0095895c30b0e0f9e87",
+        "android_client_info": {
+          "package_name": "com.example.gpcs_hostel_portal"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDK6OQ4Kj67LGZe1715WE6qsoDSaoueJ94"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

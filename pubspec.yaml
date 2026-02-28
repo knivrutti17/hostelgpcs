@@ -1,0 +1,28 @@
+name: gpcs_hostel_portal
+description: Hostel Management System for GP Chhatrapati Sambhajinagar.
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  cloud_firestore: ^6.1.1
+  firebase_auth: ^6.1.3
+  firebase_core: ^4.3.0
+  flutter:
+    sdk: flutter
+  marquee: ^2.2.3  # Add this line
+  intl: ^0.19.0  # A
+
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
+
+  # Indentation is critical: 2 spaces for 'assets' and 4 spaces for the path
+  assets:
+    - assets/images/gpcslogo.png
+    - assets/images/logo.png
