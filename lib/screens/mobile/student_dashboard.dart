@@ -4,8 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:gpcs_hostel_portal/screens/mobile/student_profile.dart';
 import 'package:gpcs_hostel_portal/screens/mobile/complain.dart';
 import 'package:gpcs_hostel_portal/screens/mobile/style/style.dart';
-// NEW: Import the leave request screen
 import 'package:gpcs_hostel_portal/screens/mobile/request_leave.dart';
+import 'package:intl/intl.dart'; // REQUIRED FOR DATE FORMATTING
 
 class StudentDashboard extends StatefulWidget {
   const StudentDashboard({super.key});
@@ -16,13 +16,12 @@ class StudentDashboard extends StatefulWidget {
 class _StudentDashboardState extends State<StudentDashboard> {
   int _currentIndex = 0;
 
-  // UPDATED: Added RequestLeave() to the pages list
   final List<Widget> _pages = [
     const HomeContent(),
     const StudentProfile(),
-    const RequestLeave(), // NEW: Leave Request Page added here
+    const RequestLeave(),
     const Center(child: Text("Fees")),
-    const RegisterComplaint()
+    const RegisterComplaint(),
   ];
 
   @override
@@ -49,7 +48,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
       items: const [
         BottomNavigationBarItem(icon: Icon(Icons.grid_view_rounded), label: 'Home'),
         BottomNavigationBarItem(icon: Icon(Icons.person_rounded), label: 'Profile'),
-        // NEW: Leave Item added to the bottom bar
         BottomNavigationBarItem(icon: Icon(Icons.exit_to_app_rounded), label: 'Leave'),
         BottomNavigationBarItem(icon: Icon(Icons.account_balance_wallet_rounded), label: 'Fees'),
         BottomNavigationBarItem(icon: Icon(Icons.receipt_long_rounded), label: 'Requests'),
@@ -58,8 +56,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }
 }
 
-// --- PROFESSIONAL REACTIVE COMPONENT ---
-// (Logic preserved as per your original file)
 class ProfessionalCard extends StatefulWidget {
   final Widget child;
   final VoidCallback? onTap;
@@ -146,11 +142,15 @@ class HomeContent extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 20),
+
+                    // UPDATED: LIVE ATTENDANCE LOGIC
+                    _buildAttendanceSection(context, user?.uid ?? ""),
+
+                    const SizedBox(height: 20),
                     Row(
                       children: [
                         Expanded(child: ProfessionalCard(child: _buildEmergencyCard())),
                         const SizedBox(width: 15),
-                        // Preserved Leave Info card on Home
                         Expanded(child: ProfessionalCard(child: _buildLeaveCard())),
                       ],
                     ),
@@ -159,6 +159,65 @@ class HomeContent extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        );
+      },
+    );
+  }
+
+  // UPDATED: Professional Attendance Logic with StreamBuilder
+  Widget _buildAttendanceSection(BuildContext context, String studentUid) {
+    String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+
+    return StreamBuilder<DocumentSnapshot>(
+      // Listen to today's specific attendance record in Firestore
+      stream: FirebaseFirestore.instance
+          .collection('daily_attendance')
+          .doc("${today}_$studentUid")
+          .snapshots(),
+      builder: (context, snapshot) {
+        // Dynamic UI check: If record exists for current date and UID
+        bool isPresent = snapshot.hasData && snapshot.data!.exists;
+
+        return ProfessionalCard(
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text("ATTENDANCE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: AppStyle.primaryTeal)),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    // Change icon color based on attendance status
+                    Icon(isPresent ? Icons.check_circle : Icons.error_outline,
+                        color: isPresent ? Colors.green : Colors.red, size: 20),
+                    const SizedBox(width: 10),
+                    Text(isPresent ? "Attendance Marked" : "Not Marked",
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                const Text("Time Window: 7:00 PM – 9:00 PM", style: TextStyle(fontSize: 11, color: Colors.grey)),
+                const SizedBox(height: 15),
+                SizedBox(
+                  width: double.infinity,
+                  height: 45,
+                  child: ElevatedButton.icon(
+                    // Disable the button if attendance is already marked
+                    onPressed: isPresent ? null : () => Navigator.pushNamed(context, '/attendance_page'),
+                    icon: const Icon(Icons.check_circle_outline, size: 18),
+                    label: Text(isPresent ? "PRESENT" : "Mark Attendance", style: const TextStyle(fontWeight: FontWeight.bold)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isPresent ? Colors.grey[300] : AppStyle.primaryTeal,
+                      foregroundColor: isPresent ? Colors.grey[600] : Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      elevation: 0,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },

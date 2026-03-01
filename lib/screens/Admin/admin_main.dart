@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:gpcs_hostel_portal/widgets.dart';
 import 'package:gpcs_hostel_portal/styles.dart';
-// Import the new Staff Management view
 import 'package:gpcs_hostel_portal/screens/admin/views/admin_overview.dart';
 import 'package:gpcs_hostel_portal/screens/admin/views/merit_setup.dart';
 import 'package:gpcs_hostel_portal/screens/admin/views/user_logs.dart';
@@ -50,18 +49,17 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Widget _buildMainContent() {
-    // Dynamically switching between the modular view files
     switch (_activeView) {
       case "Overview":
-        return AdminOverview();
+        return const AdminOverview(); // Calling the live aggregated view
       case "Staff":
-        return const StaffManagementView(); // The new UI for staff management
+        return const StaffManagementView();
       case "MeritSetup":
         return MeritSetupForm();
       case "Logs":
         return UserLogsView();
       default:
-        return AdminOverview();
+        return const AdminOverview();
     }
   }
 
@@ -73,7 +71,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
         children: [
           _sectionHeader("SYSTEM ADMINISTRATION"),
           _sidebarItem("Dashboard Overview", Icons.dashboard, "Overview"),
-          // Linked to the 'Staff' case in _buildMainContent
           _sidebarItem("Staff Management", Icons.people_alt, "Staff"),
           _sectionHeader("ADMISSION CONTROL"),
           _sidebarItem("Merit List Setup", Icons.list_alt, "MeritSetup"),

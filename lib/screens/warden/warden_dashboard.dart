@@ -4,7 +4,8 @@ import '../../widgets.dart';
 import '../../styles.dart';
 import 'warden_complaint_view.dart';
 import 'merit_setup_view.dart';
-import 'leave_approval.dart'; // Ensure this matches your approval file name
+import 'leave_approval.dart';
+import 'warden_attendance_override.dart'; // NEW: Import for attendance override
 
 class WardenDashboard extends StatefulWidget {
   const WardenDashboard({super.key});
@@ -56,6 +57,8 @@ class _WardenDashboardState extends State<WardenDashboard> {
         return const MeritSetupView();
       case 'Complaint Box':
         return const WardenComplaintView();
+      case 'Attendance Override': // NEW: Navigation Case
+        return const WardenAttendanceOverride();
       default:
         return Center(child: Text("Section: $_activeSection Under Development", style: const TextStyle(color: Colors.grey)));
     }
@@ -78,7 +81,6 @@ class _WardenDashboardState extends State<WardenDashboard> {
               _infoCard("Occupied Rooms", "132", Icons.bed, Colors.teal),
               _infoCard("Vacant Rooms", "18", Icons.single_bed, Colors.red),
 
-              // LIVE PENDING LEAVE COUNT
               StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance.collection('leaves').where('status', isEqualTo: 'Pending').snapshots(),
                 builder: (context, snapshot) {
@@ -95,10 +97,17 @@ class _WardenDashboardState extends State<WardenDashboard> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(flex: 2, child: _buildDashboardSection("Live Alerts", _buildLiveAlertList())),
+              // NEW: Integrated Attendance Override Card
+              Expanded(
+                  flex: 2,
+                  child: _buildDashboardSection(
+                    "Attendance Status",
+                    _buildAttendanceModule(),
+                    onViewAll: () => setState(() => _activeSection = 'Attendance Override'),
+                  )
+              ),
               const SizedBox(width: 25),
 
-              // UPDATED LEAVE SECTION WITH VIEW ALL
               Expanded(
                   flex: 3,
                   child: _buildDashboardSection(
@@ -125,6 +134,34 @@ class _WardenDashboardState extends State<WardenDashboard> {
     );
   }
 
+  // NEW: Manual Attendance Preview Module
+  Widget _buildAttendanceModule() {
+    return Column(
+      children: [
+        const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text("85%", style: TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.green)),
+            SizedBox(width: 10),
+            Text("Present\nToday", style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        const SizedBox(height: 15),
+        const Text("Some students facing GPS issues?", style: TextStyle(fontSize: 12, color: Colors.grey)),
+        const SizedBox(height: 10),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () => setState(() => _activeSection = 'Attendance Override'),
+            icon: const Icon(Icons.fact_check_outlined, size: 18, color: Colors.white),
+            label: const Text("MANUAL OVERRIDE", style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, padding: const EdgeInsets.symmetric(vertical: 12)),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _infoCard(String title, String val, IconData icon, Color color) {
     return Expanded(
       child: Container(
@@ -143,7 +180,6 @@ class _WardenDashboardState extends State<WardenDashboard> {
     );
   }
 
-  // UPDATED: Added onViewAll parameter to handle navigation
   Widget _buildDashboardSection(String title, Widget content, {VoidCallback? onViewAll}) {
     return Container(
       padding: const EdgeInsets.all(25),
@@ -192,12 +228,11 @@ class _WardenDashboardState extends State<WardenDashboard> {
     );
   }
 
-  // NEW: Real-time Leave Table fetching from Firestore
   Widget _buildLiveLeaveTable() {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance.collection('leaves')
           .where('status', isEqualTo: 'Pending')
-          .limit(3) // Showing only 3 in preview
+          .limit(3)
           .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Center(child: LinearProgressIndicator());
@@ -293,6 +328,8 @@ class _WardenDashboardState extends State<WardenDashboard> {
           _sidebarItem("Student Admission & Allotment", Icons.person_add_outlined),
           _sidebarItem("Student Profile View", Icons.person_search_outlined),
           _sidebarItem("Room & Bed Allocation", Icons.bed_outlined),
+          _sidebarTitle(" Attendance Management"), // NEW TITLE
+          _sidebarItem("Attendance Override", Icons.fact_check_outlined), // NEW ITEM
           _sidebarTitle(" Room & Hostel Status"),
           _sidebarItem("Vacant Room Status", Icons.meeting_room_outlined),
         ],
