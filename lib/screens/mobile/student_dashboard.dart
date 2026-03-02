@@ -5,7 +5,8 @@ import 'package:gpcs_hostel_portal/screens/mobile/student_profile.dart';
 import 'package:gpcs_hostel_portal/screens/mobile/complain.dart';
 import 'package:gpcs_hostel_portal/screens/mobile/style/style.dart';
 import 'package:gpcs_hostel_portal/screens/mobile/request_leave.dart';
-import 'package:intl/intl.dart'; // REQUIRED FOR DATE FORMATTING
+import 'package:gpcs_hostel_portal/screens/mobile/attendance_history.dart';
+import 'package:intl/intl.dart';
 
 class StudentDashboard extends StatefulWidget {
   const StudentDashboard({super.key});
@@ -120,7 +121,7 @@ class HomeContent extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10),
                 child: Column(
                   children: [
-                    _buildHostelIDCard(data['name'] ?? "Rohit Kakde", data['rollNo'] ?? "3434", data['roomNo'] ?? "A-102"),
+                    _buildHostelIDCard(data['name'] ?? "Student", data['rollNo'] ?? "N/A", data['roomNo'] ?? "N/A"),
                     const SizedBox(height: 20),
                     Row(
                       children: [
@@ -128,7 +129,7 @@ class HomeContent extends StatelessWidget {
                         const SizedBox(width: 15),
                         Expanded(child: ProfessionalCard(
                           onTap: () => Navigator.pushNamed(context, '/room_details_screen'),
-                          child: _roomDetailsItem(data['roomNo'] ?? "A-102"),
+                          child: _roomDetailsItem(data['roomNo'] ?? "N/A"),
                         )),
                       ],
                     ),
@@ -143,15 +144,20 @@ class HomeContent extends StatelessWidget {
                     ),
                     const SizedBox(height: 20),
 
-                    // UPDATED: LIVE ATTENDANCE LOGIC
-                    _buildAttendanceSection(context, user?.uid ?? ""),
+                    // LIVE ATTENDANCE STATUS BLOCK
+                    _buildLiveAttendanceSection(context, user?.uid ?? ""),
 
                     const SizedBox(height: 20),
                     Row(
                       children: [
                         Expanded(child: ProfessionalCard(child: _buildEmergencyCard())),
                         const SizedBox(width: 15),
-                        Expanded(child: ProfessionalCard(child: _buildLeaveCard())),
+                        Expanded(child: ProfessionalCard(
+                          onTap: () {
+                            Navigator.push(context, MaterialPageRoute(builder: (context) => const AttendanceHistory()));
+                          },
+                          child: _buildHistoryCard(),
+                        )),
                       ],
                     ),
                     const SizedBox(height: 30),
@@ -165,19 +171,43 @@ class HomeContent extends StatelessWidget {
     );
   }
 
-  // UPDATED: Professional Attendance Logic with StreamBuilder
-  Widget _buildAttendanceSection(BuildContext context, String studentUid) {
+  // UPDATED: Live Attendance Section with Null Safety
+  Widget _buildLiveAttendanceSection(BuildContext context, String uid) {
     String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
-    return StreamBuilder<DocumentSnapshot>(
-      // Listen to today's specific attendance record in Firestore
+    return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('daily_attendance')
-          .doc("${today}_$studentUid")
+          .where('studentUid', isEqualTo: uid)
+          .where('date', isEqualTo: today)
           .snapshots(),
       builder: (context, snapshot) {
-        // Dynamic UI check: If record exists for current date and UID
-        bool isPresent = snapshot.hasData && snapshot.data!.exists;
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        // CRITICAL FIX: Safe check for 'Present' status
+        bool isAnyPresent = snapshot.hasData &&
+            snapshot.data!.docs.any((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              return data['status'] == 'Present';
+            });
+
+        // CRITICAL FIX: Safe check for slot field using containsKey
+        bool morningDone = snapshot.hasData &&
+            snapshot.data!.docs.any((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              // If slot is missing, we default to 'Manual' to prevent crash
+              String slotValue = data.containsKey('slot') ? data['slot'] : 'Manual';
+              return slotValue == 'Morning' || slotValue == 'Manual';
+            });
+
+        bool nightDone = snapshot.hasData &&
+            snapshot.data!.docs.any((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              String slotValue = data.containsKey('slot') ? data['slot'] : 'Manual';
+              return slotValue == 'Night' || slotValue == 'Manual';
+            });
 
         return ProfessionalCard(
           child: Container(
@@ -185,35 +215,53 @@ class HomeContent extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text("ATTENDANCE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: AppStyle.primaryTeal)),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text("ATTENDANCE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: AppStyle.primaryTeal)),
+                    if (isAnyPresent)
+                      const Icon(Icons.verified_user_rounded, color: Colors.green, size: 16),
+                  ],
+                ),
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    // Change icon color based on attendance status
-                    Icon(isPresent ? Icons.check_circle : Icons.error_outline,
-                        color: isPresent ? Colors.green : Colors.red, size: 20),
-                    const SizedBox(width: 10),
-                    Text(isPresent ? "Attendance Marked" : "Not Marked",
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                    Icon(isAnyPresent ? Icons.check_circle : Icons.error_outline,
+                        color: isAnyPresent ? Colors.green : Colors.red, size: 24),
+                    const SizedBox(width: 12),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(isAnyPresent ? "Attendance Marked" : "Not Marked",
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        const Text("Morning: 10AM-4PM | Night: 8PM-9PM",
+                            style: TextStyle(fontSize: 11, color: Colors.grey)),
+                      ],
+                    ),
                   ],
                 ),
-                const SizedBox(height: 4),
-                const Text("Time Window: 7:00 PM – 9:00 PM", style: TextStyle(fontSize: 11, color: Colors.grey)),
+                const SizedBox(height: 15),
+                Row(
+                  children: [
+                    _slotChip("MORNING", morningDone),
+                    const SizedBox(width: 10),
+                    _slotChip("NIGHT", nightDone),
+                  ],
+                ),
                 const SizedBox(height: 15),
                 SizedBox(
                   width: double.infinity,
-                  height: 45,
-                  child: ElevatedButton.icon(
-                    // Disable the button if attendance is already marked
-                    onPressed: isPresent ? null : () => Navigator.pushNamed(context, '/attendance_page'),
-                    icon: const Icon(Icons.check_circle_outline, size: 18),
-                    label: Text(isPresent ? "PRESENT" : "Mark Attendance", style: const TextStyle(fontWeight: FontWeight.bold)),
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: (morningDone && nightDone) ? null : () => Navigator.pushNamed(context, '/attendance_page'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: isPresent ? Colors.grey[300] : AppStyle.primaryTeal,
-                      foregroundColor: isPresent ? Colors.grey[600] : Colors.white,
+                      backgroundColor: (morningDone && nightDone) ? Colors.grey[200] : AppStyle.primaryTeal,
+                      foregroundColor: (morningDone && nightDone) ? Colors.grey[500] : Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       elevation: 0,
                     ),
+                    child: Text((morningDone && nightDone) ? "FULLY PRESENT" : "MARK ATTENDANCE",
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
                   ),
                 ),
               ],
@@ -221,6 +269,25 @@ class HomeContent extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  Widget _slotChip(String label, bool isDone) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: isDone ? Colors.green.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: isDone ? Colors.green : Colors.grey.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(isDone ? Icons.check : Icons.access_time, size: 12, color: isDone ? Colors.green : Colors.grey),
+          const SizedBox(width: 4),
+          Text(label, style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: isDone ? Colors.green : Colors.grey)),
+        ],
+      ),
     );
   }
 
@@ -289,7 +356,7 @@ class HomeContent extends StatelessWidget {
           const Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text("Suraj Patil", style: TextStyle(fontSize: 11, color: Colors.grey)),
+              Text("View Partners", style: TextStyle(fontSize: 11, color: Colors.grey)),
               Icon(Icons.arrow_forward_ios_rounded, size: 12, color: Colors.grey),
             ],
           ),
@@ -328,16 +395,22 @@ class HomeContent extends StatelessWidget {
     );
   }
 
-  Widget _buildLeaveCard() {
+  Widget _buildHistoryCard() {
     return Container(
       padding: const EdgeInsets.all(16),
       child: const Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text("LEAVE INFO", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.blueAccent)),
+          Text("HISTORY", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.blueAccent)),
           SizedBox(height: 10),
-          Text("3 Days", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          Text("Balance Left", style: TextStyle(fontSize: 10, color: Colors.grey)),
+          Text("Calendar", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text("View Logs", style: TextStyle(fontSize: 11, color: Colors.grey)),
+              Icon(Icons.calendar_month_rounded, size: 14, color: Colors.grey),
+            ],
+          ),
         ],
       ),
     );

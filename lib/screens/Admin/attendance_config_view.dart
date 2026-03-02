@@ -8,75 +8,67 @@ class AttendanceConfigView extends StatefulWidget {
 }
 
 class _AttendanceConfigViewState extends State<AttendanceConfigView> {
-  // These controllers are essential for the Latitude/Longitude input
-  final _latController = TextEditingController();
-  final _longController = TextEditingController();
-  final _radiusController = TextEditingController();
+  // Geofence Controllers
+  final TextEditingController _latController = TextEditingController();
+  final TextEditingController _lngController = TextEditingController();
+  final TextEditingController _radiusController = TextEditingController();
 
-  String _startTime = "19:00";
-  String _endTime = "21:00";
-  bool _isLoading = true;
+  bool _allowAnytime = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _loadExistingSettings();
+  // Existing Slot 1 (Morning)
+  TimeOfDay _startTime1 = const TimeOfDay(hour: 10, minute: 0);
+  TimeOfDay _endTime1 = const TimeOfDay(hour: 16, minute: 0);
+
+  // New Feature: Slot 2 (Night)
+  TimeOfDay _startTime2 = const TimeOfDay(hour: 20, minute: 0);
+  TimeOfDay _endTime2 = const TimeOfDay(hour: 21, minute: 0);
+
+  // Helper to format time for Firestore (e.g., 9:05 instead of 9:5)
+  String _formatTimeOfDay(TimeOfDay tod) {
+    final String hour = tod.hour.toString();
+    final String minute = tod.minute.toString().padLeft(2, '0');
+    return "$hour:$minute";
   }
 
-  // Fetches current settings to show what is already in the database
-  Future<void> _loadExistingSettings() async {
-    try {
-      var doc = await FirebaseFirestore.instance.collection('attendance_config').doc('settings').get();
-      if (doc.exists) {
-        var data = doc.data()!;
-        setState(() {
-          _latController.text = data['latitude'].toString();
-          _longController.text = data['longitude'].toString();
-          _radiusController.text = data['radius'].toString();
-          _startTime = data['startTime'] ?? "19:00";
-          _endTime = data['endTime'] ?? "21:00";
-        });
-      }
-    } catch (e) {
-      debugPrint("Error loading settings: $e");
-    } finally {
-      setState(() => _isLoading = false);
-    }
-  }
-
-  // Allows Admin to pick the start and end times
-  Future<void> _selectTime(bool isStart) async {
-    TimeOfDay? picked = await showTimePicker(
-      context: context,
-      initialTime: const TimeOfDay(hour: 19, minute: 0),
-    );
-    if (picked != null) {
-      setState(() {
-        String formatted = "${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}";
-        if (isStart) _startTime = formatted; else _endTime = formatted;
-      });
-    }
-  }
-
-  // Saves the configuration to Firestore
-  void _saveSettings() async {
+  Future<void> _saveSettings() async {
     try {
       await FirebaseFirestore.instance.collection('attendance_config').doc('settings').set({
-        'latitude': double.parse(_latController.text.trim()),
-        'longitude': double.parse(_longController.text.trim()),
-        'radius': int.parse(_radiusController.text.trim()),
-        'startTime': _startTime,
-        'endTime': _endTime,
-        'lastUpdated': FieldValue.serverTimestamp(),
+        'latitude': double.parse(_latController.text),
+        'longitude': double.parse(_lngController.text),
+        'radius': double.parse(_radiusController.text),
+        'allowAnytime': _allowAnytime, // Save the toggle state
+        'morning_start': _formatTimeOfDay(_startTime1),
+        'morning_end': _formatTimeOfDay(_endTime1),
+        'night_start': _formatTimeOfDay(_startTime2),
+        'night_end': _formatTimeOfDay(_endTime2),
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Saved Successfully!")));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Settings Updated Successfully!")));
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
-      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
     }
+  }
+
+  // Interactive Time Picker Method
+  Future<void> _selectTimeRange(String title, TimeOfDay currentStart, TimeOfDay currentEnd, Function(TimeOfDay, TimeOfDay) onUpdate) async {
+    TimeOfDay? start = await showTimePicker(
+      context: context,
+      initialTime: currentStart,
+      helpText: "SELECT START TIME: $title",
+    );
+    if (start == null) return;
+
+    if (!mounted) return;
+
+    TimeOfDay? end = await showTimePicker(
+      context: context,
+      initialTime: currentEnd,
+      helpText: "SELECT END TIME: $title",
+    );
+    if (end == null) return;
+
+    onUpdate(start, end);
   }
 
   @override
@@ -84,71 +76,90 @@ class _AttendanceConfigViewState extends State<AttendanceConfigView> {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Attendance Setup", style: TextStyle(color: Colors.white)),
-        backgroundColor: const Color(0xFF1A237E),
+        backgroundColor: Colors.indigo,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: _isLoading ? const Center(child: CircularProgressIndicator()) : SingleChildScrollView(
-        padding: const EdgeInsets.all(25),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            const Text("Hostel Geofence Configuration",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1A237E))),
+            _buildGeofenceFields(),
+            const Divider(height: 40),
+
+            // EMERGENCY TOGGLE SECTION
+            SwitchListTile(
+              title: const Text("Allow Anytime Attendance", style: TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: const Text("Enable this to bypass time restrictions for emergencies."),
+              value: _allowAnytime,
+              onChanged: (val) => setState(() => _allowAnytime = val),
+              activeColor: Colors.redAccent,
+            ),
+
             const SizedBox(height: 20),
-            TextField(
-                controller: _latController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: "Hostel Latitude", border: OutlineInputBorder())
+            const Text("ATTENDANCE TIME WINDOWS", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+
+            // UPDATED: Interactive Morning Slot
+            _buildTimePickerTile(
+              "Morning Slot",
+              _startTime1,
+              _endTime1,
+                  () => _selectTimeRange("Morning", _startTime1, _endTime1, (s, e) => setState(() {
+                _startTime1 = s;
+                _endTime1 = e;
+              })),
             ),
-            const SizedBox(height: 15),
-            TextField(
-                controller: _longController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: "Hostel Longitude", border: OutlineInputBorder())
+
+            // UPDATED: Interactive Night Slot
+            _buildTimePickerTile(
+              "Night Slot",
+              _startTime2,
+              _endTime2,
+                  () => _selectTimeRange("Night", _startTime2, _endTime2, (s, e) => setState(() {
+                _startTime2 = s;
+                _endTime2 = e;
+              })),
             ),
-            const SizedBox(height: 15),
-            TextField(
-                controller: _radiusController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: "Allowed Radius (meters)", border: OutlineInputBorder())
-            ),
-            const SizedBox(height: 25),
-            const Text("Attendance Time Window", style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                      onPressed: () => _selectTime(true),
-                      icon: const Icon(Icons.access_time),
-                      label: Text("Start: $_startTime")
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: OutlinedButton.icon(
-                      onPressed: () => _selectTime(false),
-                      icon: const Icon(Icons.access_time),
-                      label: Text("End: $_endTime")
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 35),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: _saveSettings,
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1A237E),
-                    foregroundColor: Colors.white
-                ),
-                child: const Text("SAVE AND INITIALIZE DB", style: TextStyle(fontWeight: FontWeight.bold)),
+
+            const SizedBox(height: 30),
+            ElevatedButton(
+              onPressed: _saveSettings,
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 50),
+                backgroundColor: Colors.indigo,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
+              child: const Text("SAVE AND INITIALIZE DB", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  // Updated Helper with onTap handler
+  Widget _buildTimePickerTile(String title, TimeOfDay start, TimeOfDay end, VoidCallback onTap) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.shade200)),
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      child: ListTile(
+        onTap: onTap, // Now handles the click!
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+        subtitle: Text("${start.format(context)} to ${end.format(context)}", style: const TextStyle(color: Colors.indigo)),
+        trailing: const Icon(Icons.access_time_filled, color: Colors.grey),
+      ),
+    );
+  }
+
+  Widget _buildGeofenceFields() {
+    return Column(
+      children: [
+        TextField(controller: _latController, decoration: const InputDecoration(labelText: "Hostel Latitude", prefixIcon: Icon(Icons.location_on))),
+        const SizedBox(height: 10),
+        TextField(controller: _lngController, decoration: const InputDecoration(labelText: "Hostel Longitude", prefixIcon: Icon(Icons.location_searching))),
+        const SizedBox(height: 10),
+        TextField(controller: _radiusController, decoration: const InputDecoration(labelText: "Allowed Radius (meters)", prefixIcon: Icon(Icons.radar))),
+      ],
     );
   }
 }

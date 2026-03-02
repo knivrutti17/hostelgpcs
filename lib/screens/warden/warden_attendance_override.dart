@@ -60,19 +60,35 @@ class _WardenAttendanceOverrideState extends State<WardenAttendanceOverride> {
     );
   }
 
-  // Step 2: Manual Write Logic
+  // Step 2: UPDATED Manual Write Logic
   void _markAttendanceManually(String studentId, String studentName) async {
     String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    await FirebaseFirestore.instance
-        .collection('daily_attendance')
-        .doc("${today}_$studentId")
-        .set({
-      'studentUid': studentId,
-      'studentName': studentName,
-      'status': 'Present',
-      'markedBy': 'warden',
-      'timestamp': FieldValue.serverTimestamp(),
-      'date': today,
-    });
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('daily_attendance')
+          .doc("${today}_$studentId")
+          .set({
+        'studentUid': studentId,
+        'studentName': studentName,
+        'status': 'Present',
+        'slot': 'Manual', // CRITICAL FIX: Adding the missing slot field
+        'markedBy': 'warden',
+        'timestamp': FieldValue.serverTimestamp(),
+        'date': today,
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Attendance marked for $studentName"))
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red)
+        );
+      }
+    }
   }
 }
