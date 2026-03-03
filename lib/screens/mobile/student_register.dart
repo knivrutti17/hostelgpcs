@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:gpcs_hostel_portal/screens/mobile/style/style.dart';
-import 'package:gpcs_hostel_portal/services/mobile_auth_service.dart'; // Import the new service
+import 'package:gpcs_hostel_portal/services/mobile_auth_service.dart';
 
 class StudentRegister extends StatefulWidget {
   const StudentRegister({super.key});
@@ -14,34 +15,63 @@ class _StudentRegisterState extends State<StudentRegister> {
   final _rollController = TextEditingController();
   final _passwordController = TextEditingController();
   final _contactController = TextEditingController();
-  final MobileAuthService _authService = MobileAuthService(); // Initialize Service
+  final MobileAuthService _authService = MobileAuthService();
 
   String _branch = 'IT';
   bool _isPasswordVisible = false;
   bool _isLoading = false;
 
+  // UPDATED LOGIC: Account Activation with UID support
   Future<void> _handleRegister() async {
+    final String rollInput = _rollController.text.trim();
+    final String passwordInput = _passwordController.text.trim();
+
+    if (rollInput.isEmpty || passwordInput.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Please enter your Roll Number and New Password"))
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
 
-    // Call registration logic using mobile service
-    String? result = await _authService.registerStudent(
-      name: _nameController.text.trim(),
-      rollNo: _rollController.text.trim(),
-      password: _passwordController.text.trim(),
-      contact: _contactController.text.trim(),
-      branch: _branch,
-    );
+    try {
+      // 1. Verify if student exists in the bulk-uploaded 'users' collection
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(rollInput)
+          .get();
 
-    setState(() => _isLoading = false);
+      if (!userDoc.exists) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("Roll Number not found in Hostel Records. Contact Warden."), backgroundColor: Colors.red)
+          );
+        }
+      } else {
+        // 2. Student exists! Update record with private password and UID
+        // Setting 'uid' to rollInput ensures screens looking for a UID don't crash
+        await FirebaseFirestore.instance.collection('users').doc(rollInput).update({
+          'customPassword': passwordInput,
+          'passwordChanged': true,
+          'status': 'Active',
+          'uid': rollInput,
+        });
 
-    if (result == "Success") {
-      if (mounted) {
-        Navigator.pushNamedAndRemoveUntil(context, '/student_app', (route) => false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("Account Activated Successfully!"), backgroundColor: Colors.green)
+          );
+          // Redirect to login after successful activation
+          Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+        }
       }
-    } else {
+    } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $result")));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
       }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -81,16 +111,17 @@ class _StudentRegisterState extends State<StudentRegister> {
                           onPressed: () => Navigator.pop(context),
                         ),
                         const SizedBox(width: 10),
-                        const Text("Student Registration",
+                        const Text("Activate Account",
                             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppStyle.primaryTeal)),
                       ],
                     ),
-                    const SizedBox(height: 30),
-                    _buildInputField(
-                      controller: _nameController,
-                      hint: "Full Name",
-                      icon: Icons.person_outline,
+                    const SizedBox(height: 15),
+                    const Text(
+                      "Enter your Roll Number to secure your account with a private password.",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
                     ),
+                    const SizedBox(height: 30),
                     _buildInputField(
                       controller: _rollController,
                       hint: "Roll Number",
@@ -98,16 +129,10 @@ class _StudentRegisterState extends State<StudentRegister> {
                     ),
                     _buildInputField(
                       controller: _passwordController,
-                      hint: "Password",
+                      hint: "Create New Password",
                       icon: Icons.lock_outline,
                       isPassword: true,
                     ),
-                    _buildInputField(
-                      controller: _contactController,
-                      hint: "Contact Number",
-                      icon: Icons.phone_outlined,
-                    ),
-                    _buildBranchDropdown(),
                     const SizedBox(height: 35),
                     SizedBox(
                       width: double.infinity,
@@ -121,8 +146,8 @@ class _StudentRegisterState extends State<StudentRegister> {
                         onPressed: _isLoading ? null : _handleRegister,
                         child: _isLoading
                             ? const CircularProgressIndicator(color: Colors.white)
-                            : const Text("REGISTER",
-                            style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                            : const Text("ACTIVATE ACCOUNT",
+                            style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
                       ),
                     ),
                   ],
@@ -135,7 +160,6 @@ class _StudentRegisterState extends State<StudentRegister> {
     );
   }
 
-  // UI helper methods remain unchanged as per request
   Widget _buildInputField({required TextEditingController controller, required String hint, required IconData icon, bool isPassword = false}) {
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
@@ -155,26 +179,6 @@ class _StudentRegisterState extends State<StudentRegister> {
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(vertical: 15),
         ),
-      ),
-    );
-  }
-
-  Widget _buildBranchDropdown() {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: AppStyle.cardDecoration,
-      child: DropdownButtonFormField<String>(
-        value: _branch,
-        decoration: const InputDecoration(
-          prefixIcon: Icon(Icons.school_outlined, color: AppStyle.primaryTeal, size: 22),
-          border: InputBorder.none,
-          hintText: "Branch",
-        ),
-        items: ['IT', 'Civil', 'Mech', 'Electrical']
-            .map((e) => DropdownMenuItem(value: e, child: Text(e, style: const TextStyle(fontSize: 14))))
-            .toList(),
-        onChanged: (v) => setState(() => _branch = v!),
       ),
     );
   }

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // REQUIRED
 import 'package:gpcs_hostel_portal/screens/mobile/style/style.dart';
 import 'package:intl/intl.dart';
 
@@ -17,9 +17,10 @@ class _RegisterComplaintState extends State<RegisterComplaint> {
   String _sendTo = "Warden";
   final _descriptionController = TextEditingController();
   bool _isLoading = false;
+  String? _currentRollNo; // Store roll number locally
 
-  // Stable stream variable to prevent UI blinking
-  late Stream<QuerySnapshot> _complaintStream;
+  // Stable stream variable
+  Stream<QuerySnapshot>? _complaintStream;
 
   final List<String> _categories = [
     "Electrical (Fan, Light, Switch)",
@@ -33,16 +34,25 @@ class _RegisterComplaintState extends State<RegisterComplaint> {
   @override
   void initState() {
     super.initState();
-    final user = FirebaseAuth.instance.currentUser;
+    _initSessionAndStream(); // Initialize Roll No and Stream
+  }
 
-    // Initializing the stream with sorting enabled
-    // Ensure you have created the Firestore Index for this to work
-    _complaintStream = FirebaseFirestore.instance
-        .collection('complaints')
-        .where('studentUid', isEqualTo: user?.uid)
-        .orderBy('timestamp', descending: true)
-        .limit(5)
-        .snapshots();
+  // Load Roll No from SharedPreferences and then start the Stream
+  Future<void> _initSessionAndStream() async {
+    final prefs = await SharedPreferences.getInstance();
+    final rollNo = prefs.getString('user_roll'); // Key from MobileAuthService
+
+    setState(() {
+      _currentRollNo = rollNo;
+      if (_currentRollNo != null) {
+        _complaintStream = FirebaseFirestore.instance
+            .collection('complaints')
+            .where('studentUid', isEqualTo: _currentRollNo) // Filter by Roll No
+            .orderBy('timestamp', descending: true)
+            .limit(5)
+            .snapshots();
+      }
+    });
   }
 
   @override
@@ -70,7 +80,6 @@ class _RegisterComplaintState extends State<RegisterComplaint> {
         padding: const EdgeInsets.symmetric(horizontal: 20.0),
         child: Column(
           children: [
-            // TOP SECTION: Form (Scrollable to prevent 18px overflow)
             Expanded(
               flex: 5,
               child: SingleChildScrollView(
@@ -122,7 +131,7 @@ class _RegisterComplaintState extends State<RegisterComplaint> {
                             backgroundColor: AppStyle.darkTeal,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
                         ),
-                        onPressed: _isLoading ? null : _submitComplaint,
+                        onPressed: (_isLoading || _currentRollNo == null) ? null : _submitComplaint,
                         child: _isLoading
                             ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                             : const Text("SUBMIT COMPLAINT", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
@@ -132,8 +141,6 @@ class _RegisterComplaintState extends State<RegisterComplaint> {
                 ),
               ),
             ),
-
-            // MIDDLE HEADER
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 10),
               child: Column(
@@ -152,21 +159,19 @@ class _RegisterComplaintState extends State<RegisterComplaint> {
                 ],
               ),
             ),
-
-            // BOTTOM SECTION: Live Complaint List
             Expanded(
               flex: 4,
-              child: StreamBuilder<QuerySnapshot>(
+              child: _complaintStream == null
+                  ? const Center(child: CircularProgressIndicator())
+                  : StreamBuilder<QuerySnapshot>(
                 stream: _complaintStream,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
                   }
-
                   if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                     return const Center(child: Text("No recent complaints.", style: TextStyle(color: Colors.grey, fontSize: 12)));
                   }
-
                   return ListView.builder(
                     padding: const EdgeInsets.only(bottom: 20),
                     itemCount: snapshot.data!.docs.length,
@@ -184,6 +189,7 @@ class _RegisterComplaintState extends State<RegisterComplaint> {
     );
   }
 
+  // Toggle helper methods remain unchanged
   Widget _buildToggleSection(String title, List<String> options, String current, Function(String) onSelect) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -258,24 +264,29 @@ class _RegisterComplaintState extends State<RegisterComplaint> {
     return Colors.green;
   }
 
+  // UPDATED SUBMIT LOGIC USING ROLL NUMBER
   Future<void> _submitComplaint() async {
-    if (_selectedCategory == null || _descriptionController.text.isEmpty) {
+    if (_selectedCategory == null || _descriptionController.text.isEmpty || _currentRollNo == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please fill all fields")));
       return;
     }
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
 
     setState(() => _isLoading = true);
     try {
-      final studentDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      // Fetch data using Roll Number as Document ID
+      final studentDoc = await FirebaseFirestore.instance.collection('users').doc(_currentRollNo).get();
+
+      if (!studentDoc.exists) {
+        throw "Hostel record not found. Please contact the warden.";
+      }
+
       var studentData = studentDoc.data() as Map<String, dynamic>;
 
       await FirebaseFirestore.instance.collection('complaints').add({
         'studentName': studentData['name'] ?? 'Unknown',
-        'rollNo': studentData['rollNo'] ?? '---',
+        'rollNo': _currentRollNo,
         'roomNo': studentData['roomNo'] ?? '---',
-        'studentUid': user.uid,
+        'studentUid': _currentRollNo, // Use Roll No as unique identifier
         'category': _selectedCategory,
         'description': _descriptionController.text.trim(),
         'urgency': _urgency,
@@ -285,12 +296,12 @@ class _RegisterComplaintState extends State<RegisterComplaint> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Complaint Submitted!")));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Complaint Submitted!"), backgroundColor: Colors.green));
         _descriptionController.clear();
         setState(() => _selectedCategory = null);
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

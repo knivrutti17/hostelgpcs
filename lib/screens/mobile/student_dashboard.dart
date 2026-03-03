@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // REQUIRED
 import 'package:gpcs_hostel_portal/screens/mobile/student_profile.dart';
 import 'package:gpcs_hostel_portal/screens/mobile/complain.dart';
 import 'package:gpcs_hostel_portal/screens/mobile/style/style.dart';
@@ -100,104 +100,123 @@ class _ProfessionalCardState extends State<ProfessionalCard> {
   }
 }
 
+// UPDATED CLASS: Uses SharedPreferences for data fetching
 class HomeContent extends StatelessWidget {
   const HomeContent({super.key});
 
+  Future<String?> _getRollNo() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('user_roll'); // Key from MobileAuthService
+  }
+
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance.collection('users').doc(user?.uid).snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData || !snapshot.data!.exists) return const Center(child: CircularProgressIndicator());
-        var data = snapshot.data!.data() as Map<String, dynamic>;
+    return FutureBuilder<String?>(
+        future: _getRollNo(),
+        builder: (context, rollSnapshot) {
+          if (rollSnapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-        return SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          child: Column(
-            children: [
-              _buildHeader(data['name'] ?? "Student"),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10),
+          final String? rollNo = rollSnapshot.data;
+
+          // Fetch document using Roll Number as the ID
+          return StreamBuilder<DocumentSnapshot>(
+            stream: FirebaseFirestore.instance.collection('users').doc(rollNo).snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (!snapshot.hasData || !snapshot.data!.exists) {
+                return const Center(child: Text("Profile data not found", style: TextStyle(color: Colors.grey)));
+              }
+
+              var data = snapshot.data!.data() as Map<String, dynamic>;
+
+              return SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
                 child: Column(
                   children: [
-                    _buildHostelIDCard(data['name'] ?? "Student", data['rollNo'] ?? "N/A", data['roomNo'] ?? "N/A"),
-                    const SizedBox(height: 20),
-                    Row(
-                      children: [
-                        Expanded(child: ProfessionalCard(child: _infoItem("ADMISSION", data['status'] ?? "Pending", Colors.orange))),
-                        const SizedBox(width: 15),
-                        Expanded(child: ProfessionalCard(
-                          onTap: () => Navigator.pushNamed(context, '/room_details_screen'),
-                          child: _roomDetailsItem(data['roomNo'] ?? "N/A"),
-                        )),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(child: ProfessionalCard(child: _buildAnnouncements())),
-                        const SizedBox(width: 15),
-                        Expanded(child: ProfessionalCard(child: _buildMealSchedule())),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
+                    _buildHeader(data['name'] ?? "Student"),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10),
+                      child: Column(
+                        children: [
+                          _buildHostelIDCard(data['name'] ?? "Student", data['rollNo'] ?? "N/A", data['roomNo'] ?? "N/A"),
+                          const SizedBox(height: 20),
+                          Row(
+                            children: [
+                              Expanded(child: ProfessionalCard(child: _infoItem("ADMISSION", data['status'] ?? "Pending", Colors.orange))),
+                              const SizedBox(width: 15),
+                              Expanded(child: ProfessionalCard(
+                                onTap: () => Navigator.pushNamed(context, '/room_details_screen'),
+                                child: _roomDetailsItem(data['roomNo'] ?? "N/A"),
+                              )),
+                            ],
+                          ),
+                          const SizedBox(height: 20),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(child: ProfessionalCard(child: _buildAnnouncements())),
+                              const SizedBox(width: 15),
+                              Expanded(child: ProfessionalCard(child: _buildMealSchedule())),
+                            ],
+                          ),
+                          const SizedBox(height: 20),
 
-                    // LIVE ATTENDANCE STATUS BLOCK
-                    _buildLiveAttendanceSection(context, user?.uid ?? ""),
+                          // LIVE ATTENDANCE STATUS BLOCK (Using Roll No)
+                          _buildLiveAttendanceSection(context, rollNo ?? ""),
 
-                    const SizedBox(height: 20),
-                    Row(
-                      children: [
-                        Expanded(child: ProfessionalCard(child: _buildEmergencyCard())),
-                        const SizedBox(width: 15),
-                        Expanded(child: ProfessionalCard(
-                          onTap: () {
-                            Navigator.push(context, MaterialPageRoute(builder: (context) => const AttendanceHistory()));
-                          },
-                          child: _buildHistoryCard(),
-                        )),
-                      ],
+                          const SizedBox(height: 20),
+                          Row(
+                            children: [
+                              Expanded(child: ProfessionalCard(child: _buildEmergencyCard())),
+                              const SizedBox(width: 15),
+                              Expanded(child: ProfessionalCard(
+                                onTap: () {
+                                  Navigator.push(context, MaterialPageRoute(builder: (context) => const AttendanceHistory()));
+                                },
+                                child: _buildHistoryCard(),
+                              )),
+                            ],
+                          ),
+                          const SizedBox(height: 30),
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 30),
                   ],
                 ),
-              ),
-            ],
-          ),
-        );
-      },
+              );
+            },
+          );
+        }
     );
   }
 
-  // UPDATED: Live Attendance Section with Null Safety
-  Widget _buildLiveAttendanceSection(BuildContext context, String uid) {
+  Widget _buildLiveAttendanceSection(BuildContext context, String rollNo) {
     String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('daily_attendance')
-          .where('studentUid', isEqualTo: uid)
+          .where('studentUid', isEqualTo: rollNo) // Updated to search by Roll No
           .where('date', isEqualTo: today)
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return const SizedBox(height: 50, child: Center(child: CircularProgressIndicator()));
         }
 
-        // CRITICAL FIX: Safe check for 'Present' status
         bool isAnyPresent = snapshot.hasData &&
             snapshot.data!.docs.any((doc) {
               final data = doc.data() as Map<String, dynamic>;
               return data['status'] == 'Present';
             });
 
-        // CRITICAL FIX: Safe check for slot field using containsKey
         bool morningDone = snapshot.hasData &&
             snapshot.data!.docs.any((doc) {
               final data = doc.data() as Map<String, dynamic>;
-              // If slot is missing, we default to 'Manual' to prevent crash
               String slotValue = data.containsKey('slot') ? data['slot'] : 'Manual';
               return slotValue == 'Morning' || slotValue == 'Manual';
             });
@@ -445,7 +464,7 @@ class HomeContent extends StatelessWidget {
           Text("MEALS", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: AppStyle.primaryTeal)),
           SizedBox(height: 8),
           Text("B: 7:30 AM", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-          Text("D: 8:00 PM", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+          Text("D: 8:00PM", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
         ],
       ),
     );

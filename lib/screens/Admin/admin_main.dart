@@ -5,6 +5,8 @@ import 'package:gpcs_hostel_portal/screens/admin/views/admin_overview.dart';
 import 'package:gpcs_hostel_portal/screens/admin/views/merit_setup.dart';
 import 'package:gpcs_hostel_portal/screens/admin/views/user_logs.dart';
 import 'package:gpcs_hostel_portal/screens/admin/views/staff_management.dart';
+// IMPORT SEEDER UTILITY
+import 'package:gpcs_hostel_portal/utils/database_seeder.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -15,6 +17,8 @@ class AdminDashboard extends StatefulWidget {
 
 class _AdminDashboardState extends State<AdminDashboard> {
   String _activeView = "Overview";
+  // Added: Loading state variable
+  bool _isUploading = false;
 
   @override
   Widget build(BuildContext context) {
@@ -51,7 +55,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   Widget _buildMainContent() {
     switch (_activeView) {
       case "Overview":
-        return const AdminOverview(); // Calling the live aggregated view
+        return const AdminOverview();
       case "Staff":
         return const StaffManagementView();
       case "MeritSetup":
@@ -77,6 +81,47 @@ class _AdminDashboardState extends State<AdminDashboard> {
           _sidebarItem("Admission Cut-offs", Icons.percent, "Cutoffs"),
           _sectionHeader("REPORTS"),
           _sidebarItem("User Logs", Icons.history, "Logs"),
+
+          const Spacer(),
+
+          // UPDATED: INITIALIZE DATABASE BUTTON WITH LOADING STATE
+          Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: ElevatedButton.icon(
+              icon: _isUploading
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : const Icon(Icons.upload_file, size: 18),
+              label: Text(_isUploading ? "UPLOADING..." : "INITIALIZE DATABASE", style: const TextStyle(fontSize: 11)),
+              onPressed: _isUploading ? null : () async {
+                setState(() => _isUploading = true);
+                try {
+                  // Calls the seeder logic from DatabaseSeeder
+                  await DatabaseSeeder.uploadStudents();
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("Bulk Student Data Uploaded Successfully!"), backgroundColor: Colors.green)
+                    );
+                  }
+                } catch (e) {
+                  // Catch errors like missing assets or permission denied
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text("Upload Error: $e"), backgroundColor: Colors.red)
+                    );
+                  }
+                } finally {
+                  if (mounted) setState(() => _isUploading = false);
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 45),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
         ],
       ),
     );

@@ -16,6 +16,8 @@ dependencies:
   # ADDED GEOLOCATOR FOR GPS ACCESS
   geolocator: ^13.0.1
   table_calendar: ^3.1.3
+  # ADDED SHARED PREFERENCES FOR SESSION MANAGEMENT
+  shared_preferences: ^2.3.5
 
 dev_dependencies:
   flutter_test:
@@ -27,3 +29,4 @@ flutter:
   assets:
     - assets/images/gpcslogo.png
     - assets/images/logo.png
+    - assets/student.json

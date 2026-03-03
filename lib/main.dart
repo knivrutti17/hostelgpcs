@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:shared_preferences/shared_preferences.dart'; // REQUIRED
 import 'package:gpcs_hostel_portal/firebase_options.dart';
 
 // Import Style File
@@ -28,15 +29,23 @@ import 'package:gpcs_hostel_portal/screens/mobile/attendance_page.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // 1. Initialize Firebase
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  runApp(const MyApp());
+  // 2. Check Session Status
+  final SharedPreferences prefs = await SharedPreferences.getInstance();
+  // Key must match what is saved in MobileAuthService
+  final String? rollNo = prefs.getString('user_roll');
+
+  // 3. Run App with login state
+  runApp(MyApp(isLoggedIn: rollNo != null));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final bool isLoggedIn;
+  const MyApp({super.key, required this.isLoggedIn});
 
   @override
   Widget build(BuildContext context) {
@@ -49,6 +58,7 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
       ),
 
+      // Logic: Web goes to Portal, Mobile goes to Splash
       initialRoute: kIsWeb ? '/' : '/splash',
 
       routes: {
@@ -60,18 +70,15 @@ class MyApp extends StatelessWidget {
         '/admin': (context) => const AdminDashboard(),
 
         // --- ATTENDANCE ROUTES ---
-        // Admin uses this to set GPS Coordinates and Time
-        // NO 'const' here because it contains TextEditingControllers
         '/attendance_setup': (context) => AttendanceConfigView(),
-
-        // Student uses this to mark daily attendance via GPS
-        // 'const' is okay here as the constructor allows it
         '/attendance_page': (context) => const AttendancePage(),
 
         // --- MOBILE STUDENT ROUTES ---
         '/splash': (context) => const SplashScreen(),
         '/mobile_login': (context) => const StudentMobileLogin(),
         '/student_register': (context) => const StudentRegister(),
+
+        // This handles the automatic login redirection
         '/student_app': (context) => const StudentDashboard(),
 
         // OTHER ROUTES

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // REQUIRED
 import 'package:gpcs_hostel_portal/screens/mobile/style/style.dart';
 import 'package:intl/intl.dart';
 
@@ -15,11 +15,25 @@ class _RequestLeaveState extends State<RequestLeave> {
   String? _selectedReason;
   DateTimeRange? _selectedDates;
   bool _isLoading = false;
+  String? _currentRollNo; // Store the roll number locally
   final List<String> _reasons = ["Family Function", "Medical Leave", "Going Home", "Other"];
 
   @override
+  void initState() {
+    super.initState();
+    _loadUserSession(); // Load roll number on start
+  }
+
+  // Helper to get Roll No from SharedPreferences
+  Future<void> _loadUserSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _currentRollNo = prefs.getString('user_roll'); // Key from MobileAuthService
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
     return Scaffold(
       backgroundColor: AppStyle.bgWhite,
       appBar: AppBar(
@@ -64,7 +78,7 @@ class _RequestLeaveState extends State<RequestLeave> {
                     width: double.infinity, height: 50,
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(backgroundColor: AppStyle.darkTeal, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30))),
-                      onPressed: _isLoading ? null : _submitLeave,
+                      onPressed: (_isLoading || _currentRollNo == null) ? null : _submitLeave,
                       child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text("SUBMIT REQUEST", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                     ),
                   ),
@@ -79,10 +93,18 @@ class _RequestLeaveState extends State<RequestLeave> {
           ),
           Expanded(
             flex: 4,
-            child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance.collection('leaves').where('studentUid', isEqualTo: user?.uid).orderBy('timestamp', descending: true).limit(3).snapshots(),
+            child: _currentRollNo == null
+                ? const Center(child: CircularProgressIndicator())
+                : StreamBuilder<QuerySnapshot>(
+              // Updated query to use studentUid (Roll Number)
+              stream: FirebaseFirestore.instance.collection('leaves')
+                  .where('studentUid', isEqualTo: _currentRollNo)
+                  .orderBy('timestamp', descending: true)
+                  .limit(3)
+                  .snapshots(),
               builder: (context, snapshot) {
-                if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return const Center(child: Text("No recent requests", style: TextStyle(fontSize: 12, color: Colors.grey)));
                 return ListView(padding: const EdgeInsets.all(15), children: snapshot.data!.docs.map((doc) => _buildLeaveCard(doc.data() as Map<String, dynamic>)).toList());
               },
             ),
@@ -106,55 +128,46 @@ class _RequestLeaveState extends State<RequestLeave> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(data['reason'], style: const TextStyle(fontWeight: FontWeight.bold)), Text(data['status'], style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 12))]),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(data['reason'] ?? "Reason", style: const TextStyle(fontWeight: FontWeight.bold)), Text(data['status'] ?? "Pending", style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 12))]),
           Text("${data['startDate']} to ${data['endDate']}", style: const TextStyle(fontSize: 11, color: Colors.grey)),
         ],
       ),
     );
   }
 
-  // UPDATED SUBMIT LOGIC WITH FULL SCHEMA
+  // UPDATED SUBMIT LOGIC USING ROLL NUMBER
   Future<void> _submitLeave() async {
-    if (_selectedReason == null || _selectedDates == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Please select a reason and date range"))
-      );
+    if (_selectedReason == null || _selectedDates == null || _currentRollNo == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select a reason and date range")));
       return;
     }
 
     setState(() => _isLoading = true);
 
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
-
-      // 1. Fetch current student profile data from the 'users' collection
-      final studentDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      // Fetch student data using the Roll Number as Document ID
+      final studentDoc = await FirebaseFirestore.instance.collection('users').doc(_currentRollNo).get();
 
       if (!studentDoc.exists) {
-        throw "Student profile not found. Please update your profile first.";
+        throw "Student profile not found. Please contact the warden.";
       }
 
       var sData = studentDoc.data() as Map<String, dynamic>;
 
-      // 2. Create the document in the 'leaves' collection using the exact schema
       await FirebaseFirestore.instance.collection('leaves').add({
-        'studentName': sData['name'] ?? 'Unknown',           // Full name of the student
-        'studentUid': user.uid,                              // user.uid for filtering
-        'rollNo': sData['rollNo'] ?? '---',                  // Unique ID number
-        'roomNo': sData['roomNo'] ?? '---',                  // Assigned hostel room
-        'reason': _selectedReason,                           // Selected reason (e.g., Medical)
-        'startDate': DateFormat('MMM dd').format(_selectedDates!.start), // Formatted start date
-        'endDate': DateFormat('MMM dd').format(_selectedDates!.end),     // Formatted end date
-        'status': 'Pending',                                 // Default status
-        'timestamp': FieldValue.serverTimestamp(),           // Accurate server sorting
+        'studentName': sData['name'] ?? 'Unknown',
+        'studentUid': _currentRollNo, // Use Roll No as UID for tracking
+        'rollNo': _currentRollNo,
+        'roomNo': sData['roomNo'] ?? '---',
+        'reason': _selectedReason,
+        'startDate': DateFormat('MMM dd').format(_selectedDates!.start),
+        'endDate': DateFormat('MMM dd').format(_selectedDates!.end),
+        'status': 'Pending',
+        'timestamp': FieldValue.serverTimestamp(),
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Leave Request Submitted Successfully!"))
-        );
-        // Reset form fields after successful submission
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Leave Request Submitted Successfully!"), backgroundColor: Colors.green));
         setState(() {
           _selectedReason = null;
           _selectedDates = null;
@@ -162,9 +175,7 @@ class _RequestLeaveState extends State<RequestLeave> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Error: ${e.toString()}"))
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: ${e.toString()}"), backgroundColor: Colors.red));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);

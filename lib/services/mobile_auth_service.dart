@@ -1,56 +1,43 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class MobileAuthService {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // Student Registration
-  Future<String?> registerStudent({
-    required String name,
-    required String rollNo,
-    required String password,
-    required String contact,
-    required String branch,
-  }) async {
-    try {
-      // Map Roll Number to a fake email for Firebase
-      String email = "${rollNo.trim()}@gpcs.com";
-
-      UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-
-      // Save Student Details to the 'users' collection
-      await _firestore.collection('users').doc(userCredential.user!.uid).set({
-        'uid': userCredential.user!.uid,
-        'name': name,
-        'rollNo': rollNo,
-        'contact': contact,
-        'branch': branch,
-        'status': 'Pending', // New students start as pending
-        'role': 'student',
-      });
-      return "Success";
-    } catch (e) {
-      return e.toString();
-    }
-  }
-
-  // Student Login
+  // 1. Updated Student Login (Roll No + Contact/Custom Password)
   Future<String?> loginStudent(String rollNo, String password) async {
     try {
-      String email = "${rollNo.trim()}@gpcs.com";
-      await _auth.signInWithEmailAndPassword(email: email, password: password);
-      return "Success";
+      // Fetch the document directly using Roll No as ID
+      DocumentSnapshot userDoc = await _firestore.collection('users').doc(rollNo.trim()).get();
+
+      if (!userDoc.exists) {
+        return "Student record not found. Please contact the warden.";
+      }
+
+      Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
+
+      // Check for custom password first, then fallback to mobile number
+      // Matches 'contact' field from your bulk upload
+      String correctPassword = (userData['customPassword'] ?? userData['contact']).toString();
+
+      if (password == correctPassword) {
+        // Save session locally to keep the student logged in
+        final SharedPreferences prefs = await SharedPreferences.getInstance();
+        await prefs.setString('user_roll', rollNo.trim());
+        await prefs.setBool('is_logged_in', true);
+
+        return "Success";
+      } else {
+        return "Incorrect password. Use your registered mobile number.";
+      }
     } catch (e) {
-      return e.toString();
+      return "Login Error: ${e.toString()}";
     }
   }
 
-  // Sign Out
+  // 2. Sign Out logic
   Future<void> signOut() async {
-    await _auth.signOut();
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
   }
 }

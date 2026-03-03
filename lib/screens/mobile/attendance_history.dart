@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // REQUIRED
 import 'package:intl/intl.dart';
 
 class AttendanceHistory extends StatefulWidget {
@@ -16,55 +16,85 @@ class _AttendanceHistoryState extends State<AttendanceHistory> {
   Map<DateTime, List<dynamic>> _attendanceLogs = {};
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
+  bool _isInitialLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _selectedDay = _focusedDay;
+    _selectedDay = DateTime(_focusedDay.year, _focusedDay.month, _focusedDay.day);
     _fetchHistory();
   }
 
+  // UPDATED: Fetch history using Roll Number session
   void _fetchHistory() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? rollNo = prefs.getString('user_roll'); // Matches your custom login key
 
-    var snapshot = await FirebaseFirestore.instance
-        .collection('daily_attendance')
-        .where('studentUid', isEqualTo: uid)
-        .get();
+      if (rollNo == null) {
+        if (mounted) setState(() => _isInitialLoading = false);
+        return;
+      }
 
-    Map<DateTime, List<dynamic>> data = {};
-    for (var doc in snapshot.docs) {
-      // Parse the date string from Firestore
-      DateTime date = DateTime.parse(doc['date']);
-      DateTime normalizedDate = DateTime(date.year, date.month, date.day);
+      // Query using the student's Roll Number as the UID
+      var snapshot = await FirebaseFirestore.instance
+          .collection('daily_attendance')
+          .where('studentUid', isEqualTo: rollNo)
+          .get();
 
-      if (data[normalizedDate] == null) data[normalizedDate] = [];
-      data[normalizedDate]!.add(doc.data());
-    }
+      Map<DateTime, List<dynamic>> data = {};
+      for (var doc in snapshot.docs) {
+        final Map<String, dynamic> logData = doc.data();
+        if (logData['date'] != null) {
+          DateTime date = DateTime.parse(logData['date']);
+          DateTime normalizedDate = DateTime(date.year, date.month, date.day);
 
-    if (mounted) {
-      setState(() => _attendanceLogs = data);
+          if (data[normalizedDate] == null) data[normalizedDate] = [];
+          data[normalizedDate]!.add(logData);
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _attendanceLogs = data;
+          _isInitialLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isInitialLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error fetching history: $e"), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     // Get logs for the currently selected day
-    final selectedLogs = _attendanceLogs[DateTime(_selectedDay!.year, _selectedDay!.month, _selectedDay!.day)] ?? [];
+    final normalizedSelected = DateTime(_selectedDay!.year, _selectedDay!.month, _selectedDay!.day);
+    final selectedLogs = _attendanceLogs[normalizedSelected] ?? [];
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Attendance History"),
+        title: const Text("Attendance History", style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: const Color(0xFF00897B),
         foregroundColor: Colors.white,
+        elevation: 0,
       ),
-      body: Column(
+      body: _isInitialLoading
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFF00897B)))
+          : Column(
         children: [
           TableCalendar(
             firstDay: DateTime.utc(2024, 1, 1),
             lastDay: DateTime.utc(2030, 12, 31),
             focusedDay: _focusedDay,
+            headerStyle: const HeaderStyle(
+              formatButtonVisible: false,
+              titleCentered: true,
+            ),
             selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
             onDaySelected: (selectedDay, focusedDay) {
               setState(() {
@@ -76,16 +106,19 @@ class _AttendanceHistoryState extends State<AttendanceHistory> {
               return _attendanceLogs[DateTime(day.year, day.month, day.day)] ?? [];
             },
             calendarStyle: const CalendarStyle(
-              markerDecoration: BoxDecoration(color: Colors.teal, shape: BoxShape.circle),
-              todayDecoration: BoxDecoration(color: Colors.orange, shape: BoxShape.circle),
+              markerDecoration: BoxDecoration(color: Color(0xFF00897B), shape: BoxShape.circle),
+              todayDecoration: BoxDecoration(color: Colors.orangeAccent, shape: BoxShape.circle),
               selectedDecoration: BoxDecoration(color: Color(0xFF00897B), shape: BoxShape.circle),
             ),
           ),
-          const Divider(),
+          const Divider(thickness: 1),
           Expanded(
             child: selectedLogs.isEmpty
-                ? const Center(child: Text("No attendance records for this day"))
+                ? const Center(
+                child: Text("No attendance records for this day",
+                    style: TextStyle(color: Colors.grey, fontSize: 14)))
                 : ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
               itemCount: selectedLogs.length,
               itemBuilder: (context, index) {
                 var log = selectedLogs[index];
@@ -94,11 +127,18 @@ class _AttendanceHistoryState extends State<AttendanceHistory> {
                     ? DateFormat('hh:mm a').format(timestamp.toDate())
                     : "N/A";
 
-                return ListTile(
-                  leading: const Icon(Icons.check_circle, color: Colors.green),
-                  title: Text("${log['slot']} Attendance"),
-                  subtitle: Text("Time: $timeStr"),
-                  trailing: const Text("Present", style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  elevation: 2,
+                  child: ListTile(
+                    leading: const Icon(Icons.check_circle, color: Colors.green, size: 30),
+                    title: Text("${log['slot'] ?? 'Manual'} Attendance",
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text("Time: $timeStr"),
+                    trailing: const Text("Present",
+                        style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                  ),
                 );
               },
             ),
