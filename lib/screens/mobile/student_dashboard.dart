@@ -7,6 +7,7 @@ import 'package:gpcs_hostel_portal/screens/mobile/style/style.dart';
 import 'package:gpcs_hostel_portal/screens/mobile/request_leave.dart';
 import 'package:gpcs_hostel_portal/screens/mobile/attendance_history.dart';
 import 'package:intl/intl.dart';
+import 'package:gpcs_hostel_portal/screens/mobile/student_fees.dart';
 
 class StudentDashboard extends StatefulWidget {
   const StudentDashboard({super.key});
@@ -21,7 +22,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     const HomeContent(),
     const StudentProfile(),
     const RequestLeave(),
-    const Center(child: Text("Fees")),
+    const StudentFees(),
     const RegisterComplaint(),
   ];
 
