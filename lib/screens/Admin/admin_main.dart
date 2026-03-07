@@ -5,6 +5,9 @@ import 'package:gpcs_hostel_portal/screens/admin/views/admin_overview.dart';
 import 'package:gpcs_hostel_portal/screens/admin/views/merit_setup.dart';
 import 'package:gpcs_hostel_portal/screens/admin/views/user_logs.dart';
 import 'package:gpcs_hostel_portal/screens/admin/views/staff_management.dart';
+// NEW IMPORTS: Create these files for the Emergency logic
+import 'package:gpcs_hostel_portal/screens/admin/views/manage_contacts.dart';
+import 'package:gpcs_hostel_portal/screens/admin/views/blood_donor_list.dart';
 // IMPORT SEEDER UTILITY
 import 'package:gpcs_hostel_portal/utils/database_seeder.dart';
 
@@ -17,7 +20,6 @@ class AdminDashboard extends StatefulWidget {
 
 class _AdminDashboardState extends State<AdminDashboard> {
   String _activeView = "Overview";
-  // Added: Loading state variable
   bool _isUploading = false;
 
   @override
@@ -52,6 +54,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
+  // UPDATED: Added cases for Emergency views
   Widget _buildMainContent() {
     switch (_activeView) {
       case "Overview":
@@ -62,6 +65,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
         return MeritSetupForm();
       case "Logs":
         return UserLogsView();
+      case "EmergencyContacts":
+        return const ManageContacts();
+      case "EmergencyBlood":
+        return const BloodDonorList();
       default:
         return const AdminOverview();
     }
@@ -76,15 +83,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
           _sectionHeader("SYSTEM ADMINISTRATION"),
           _sidebarItem("Dashboard Overview", Icons.dashboard, "Overview"),
           _sidebarItem("Staff Management", Icons.people_alt, "Staff"),
+
           _sectionHeader("ADMISSION CONTROL"),
           _sidebarItem("Merit List Setup", Icons.list_alt, "MeritSetup"),
           _sidebarItem("Admission Cut-offs", Icons.percent, "Cutoffs"),
+
           _sectionHeader("REPORTS"),
           _sidebarItem("User Logs", Icons.history, "Logs"),
 
+          // NEW SECTION: EMERGENCY MANAGEMENT
+          _sectionHeader("EMERGENCY CONTROL"),
+          _sidebarItem("Emergency Contacts", Icons.contact_phone, "EmergencyContacts"),
+          _sidebarItem("Emergency Blood", Icons.bloodtype, "EmergencyBlood"),
+
           const Spacer(),
 
-          // UPDATED: INITIALIZE DATABASE BUTTON WITH LOADING STATE
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: ElevatedButton.icon(
@@ -95,7 +108,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
               onPressed: _isUploading ? null : () async {
                 setState(() => _isUploading = true);
                 try {
-                  // Calls the seeder logic from DatabaseSeeder
                   await DatabaseSeeder.uploadStudents();
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -103,7 +115,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     );
                   }
                 } catch (e) {
-                  // Catch errors like missing assets or permission denied
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text("Upload Error: $e"), backgroundColor: Colors.red)
