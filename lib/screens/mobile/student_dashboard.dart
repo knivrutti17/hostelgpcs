@@ -1,13 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // REQUIRED
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_speed_dial/flutter_speed_dial.dart';
+import 'package:intl/intl.dart';
+
+// Internal screen imports
 import 'package:gpcs_hostel_portal/screens/mobile/student_profile.dart';
 import 'package:gpcs_hostel_portal/screens/mobile/complain.dart';
 import 'package:gpcs_hostel_portal/screens/mobile/style/style.dart';
 import 'package:gpcs_hostel_portal/screens/mobile/request_leave.dart';
 import 'package:gpcs_hostel_portal/screens/mobile/attendance_history.dart';
-import 'package:intl/intl.dart';
 import 'package:gpcs_hostel_portal/screens/mobile/student_fees.dart';
+
+// Import the new Services and Chat Screens
+import 'package:gpcs_hostel_portal/services/download_service.dart';
+import 'package:gpcs_hostel_portal/screens/mobile/chat/chat_list_screen.dart';
+import 'package:gpcs_hostel_portal/screens/mobile/documents_screen.dart';
+import 'package:gpcs_hostel_portal/services/chat_service.dart'; // REQUIRED FOR INITIALIZATION
 
 class StudentDashboard extends StatefulWidget {
   const StudentDashboard({super.key});
@@ -31,29 +40,102 @@ class _StudentDashboardState extends State<StudentDashboard> {
     return PopScope(
       canPop: false,
       child: Scaffold(
+        resizeToAvoidBottomInset: false, // CRITICAL: Prevents Overflow
         backgroundColor: const Color(0xFFF8F9FB),
         body: IndexedStack(index: _currentIndex, children: _pages),
+
+        // PROFESSIONAL CENTRAL FAB
+        floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+        floatingActionButton: _buildUniqueSpeedDial(context),
+
         bottomNavigationBar: _buildBottomNav(),
       ),
     );
   }
 
-  Widget _buildBottomNav() {
-    return BottomNavigationBar(
-      currentIndex: _currentIndex,
-      selectedItemColor: AppStyle.primaryTeal,
-      unselectedItemColor: AppStyle.textGrey,
-      type: BottomNavigationBarType.fixed,
-      backgroundColor: Colors.white,
-      elevation: 20,
-      onTap: (index) => setState(() => _currentIndex = index),
-      items: const [
-        BottomNavigationBarItem(icon: Icon(Icons.grid_view_rounded), label: 'Home'),
-        BottomNavigationBarItem(icon: Icon(Icons.person_rounded), label: 'Profile'),
-        BottomNavigationBarItem(icon: Icon(Icons.exit_to_app_rounded), label: 'Leave'),
-        BottomNavigationBarItem(icon: Icon(Icons.account_balance_wallet_rounded), label: 'Fees'),
-        BottomNavigationBarItem(icon: Icon(Icons.receipt_long_rounded), label: 'Requests'),
+  Widget _buildUniqueSpeedDial(BuildContext context) {
+    return SpeedDial(
+      icon: Icons.add,
+      activeIcon: Icons.close,
+      spacing: 12,
+      spaceBetweenChildren: 8,
+      backgroundColor: const Color(0xFF438A7F),
+      foregroundColor: Colors.white,
+      elevation: 10,
+      animationCurve: Curves.easeInOut,
+      shape: const CircleBorder(),
+
+      // --- REQUIREMENT: Single Tap (+) -> Open Hostel Chat System directly ---
+      onPress: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const ChatListScreen()),
+        );
+      },
+
+      // QUICK DOWNLOAD ACTIONS (FUNCTIONAL)
+      children: [
+        SpeedDialChild(
+          child: const Icon(Icons.receipt_long, color: Colors.white),
+          backgroundColor: Colors.green.shade600,
+          label: 'Fee Receipt',
+          labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+          onTap: () => DownloadService.handleGlobalDownload(context, 'Fee Receipt'),
+        ),
+        SpeedDialChild(
+          child: const Icon(Icons.badge, color: Colors.white),
+          backgroundColor: Colors.blue.shade600,
+          label: 'My ID Card',
+          labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+          onTap: () => DownloadService.handleGlobalDownload(context, 'ID Card'),
+        ),
+        SpeedDialChild(
+          child: const Icon(Icons.description, color: Colors.white),
+          backgroundColor: Colors.orange.shade600,
+          label: 'Leave Report',
+          labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+          onTap: () => DownloadService.handleGlobalDownload(context, 'Leave Report'),
+        ),
       ],
+    );
+  }
+
+  Widget _buildBottomNav() {
+    return BottomAppBar(
+      shape: const CircularNotchedRectangle(), // FIXED OVERFLOW
+      notchMargin: 8.0,
+      color: Colors.white,
+      child: SizedBox(
+        height: 60,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _navIcon(Icons.grid_view_rounded, 0, 'Home'),
+            _navIcon(Icons.person_rounded, 1, 'Profile'),
+            const SizedBox(width: 45), // SPACE FOR FAB
+            _navIcon(Icons.exit_to_app_rounded, 2, 'Leave'),
+            _navIcon(Icons.receipt_long_rounded, 4, 'Requests'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _navIcon(IconData icon, int index, String label) {
+    bool isSelected = _currentIndex == index;
+    return InkWell(
+      onTap: () => setState(() => _currentIndex = index),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: isSelected ? const Color(0xFF438A7F) : Colors.grey, size: 24),
+          Text(label, style: TextStyle(
+              color: isSelected ? const Color(0xFF438A7F) : Colors.grey,
+              fontSize: 9,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)
+          ),
+        ],
+      ),
     );
   }
 }
@@ -101,13 +183,12 @@ class _ProfessionalCardState extends State<ProfessionalCard> {
   }
 }
 
-// UPDATED CLASS: Uses SharedPreferences for data fetching
 class HomeContent extends StatelessWidget {
   const HomeContent({super.key});
 
   Future<String?> _getRollNo() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('user_roll'); // Key from MobileAuthService
+    return prefs.getString('user_roll');
   }
 
   @override
@@ -121,7 +202,6 @@ class HomeContent extends StatelessWidget {
 
           final String? rollNo = rollSnapshot.data;
 
-          // Fetch document using Roll Number as the ID
           return StreamBuilder<DocumentSnapshot>(
             stream: FirebaseFirestore.instance.collection('users').doc(rollNo).snapshots(),
             builder: (context, snapshot) {
@@ -133,6 +213,11 @@ class HomeContent extends StatelessWidget {
               }
 
               var data = snapshot.data!.data() as Map<String, dynamic>;
+
+              // --- REQUIREMENT: AUTOMATIC CHAT INITIALIZATION ---
+              // Creates the "Real" Firestore storage for Public, Room, and Notice chats
+              String roomNo = data['roomNo'] ?? "Unknown";
+              ChatService().initializeHostelChats(roomNo);
 
               return SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
@@ -166,7 +251,6 @@ class HomeContent extends StatelessWidget {
                           ),
                           const SizedBox(height: 20),
 
-                          // LIVE ATTENDANCE STATUS BLOCK (Using Roll No)
                           _buildLiveAttendanceSection(context, rollNo ?? ""),
 
                           const SizedBox(height: 20),
@@ -201,7 +285,7 @@ class HomeContent extends StatelessWidget {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('daily_attendance')
-          .where('studentUid', isEqualTo: rollNo) // Updated to search by Roll No
+          .where('studentUid', isEqualTo: rollNo)
           .where('date', isEqualTo: today)
           .snapshots(),
       builder: (context, snapshot) {
@@ -238,7 +322,7 @@ class HomeContent extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text("ATTENDANCE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: AppStyle.primaryTeal)),
+                    const Text("ATTENDANCE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: const Color(0xFF438A7F))),
                     if (isAnyPresent)
                       const Icon(Icons.verified_user_rounded, color: Colors.green, size: 16),
                   ],
@@ -275,7 +359,7 @@ class HomeContent extends StatelessWidget {
                   child: ElevatedButton(
                     onPressed: (morningDone && nightDone) ? null : () => Navigator.pushNamed(context, '/attendance_page'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: (morningDone && nightDone) ? Colors.grey[200] : AppStyle.primaryTeal,
+                      backgroundColor: (morningDone && nightDone) ? Colors.grey[200] : const Color(0xFF438A7F),
                       foregroundColor: (morningDone && nightDone) ? Colors.grey[500] : Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       elevation: 0,
@@ -316,7 +400,7 @@ class HomeContent extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.only(top: 60, bottom: 40, left: 25),
       decoration: const BoxDecoration(
-        gradient: AppStyle.headerGradient,
+        gradient: LinearGradient(colors: [Color(0xFFA1E7D1), Color(0xFF438A7F)]),
         borderRadius: BorderRadius.only(bottomLeft: Radius.circular(40), bottomRight: Radius.circular(40)),
       ),
       child: Column(
@@ -337,8 +421,8 @@ class HomeContent extends StatelessWidget {
           children: [
             Container(
               padding: const EdgeInsets.all(3),
-              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppStyle.primaryTeal, width: 2)),
-              child: CircleAvatar(radius: 35, backgroundColor: AppStyle.accentTeal, child: const Icon(Icons.person, size: 40, color: AppStyle.primaryTeal)),
+              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: const Color(0xFF438A7F), width: 2)),
+              child: CircleAvatar(radius: 35, backgroundColor: const Color(0xFFA1E7D1), child: const Icon(Icons.person, size: 40, color: const Color(0xFF438A7F))),
             ),
             const SizedBox(width: 20),
             Expanded(
@@ -351,8 +435,8 @@ class HomeContent extends StatelessWidget {
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(color: AppStyle.accentTeal.withOpacity(0.4), borderRadius: BorderRadius.circular(8)),
-                    child: Text("ROOM $room", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppStyle.primaryTeal)),
+                    decoration: BoxDecoration(color: const Color(0xFFA1E7D1).withOpacity(0.4), borderRadius: BorderRadius.circular(8)),
+                    child: Text("ROOM $room", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFF438A7F))),
                   ),
                 ],
               ),
@@ -370,7 +454,7 @@ class HomeContent extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("ROOM DETAILS", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: AppStyle.primaryTeal)),
+          const Text("ROOM DETAILS", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: const Color(0xFF438A7F))),
           const SizedBox(height: 8),
           Text(room, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const Row(
@@ -452,17 +536,17 @@ class HomeContent extends StatelessWidget {
   }
 
   Widget _annoRow(IconData i, String t) {
-    return Padding(padding: const EdgeInsets.only(bottom: 6), child: Row(children: [Icon(i, size: 14, color: AppStyle.primaryTeal), const SizedBox(width: 8), Text(t, style: const TextStyle(fontSize: 10))]));
+    return Padding(padding: const EdgeInsets.only(bottom: 6), child: Row(children: [Icon(i, size: 14, color: const Color(0xFF438A7F)), const SizedBox(width: 8), Text(t, style: const TextStyle(fontSize: 10))]));
   }
 
   Widget _buildMealSchedule() {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: AppStyle.accentTeal.withOpacity(0.3), borderRadius: BorderRadius.circular(24)),
+      decoration: BoxDecoration(color: const Color(0xFFA1E7D1).withOpacity(0.3), borderRadius: BorderRadius.circular(24)),
       child: const Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text("MEALS", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: AppStyle.primaryTeal)),
+          Text("MEALS", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: const Color(0xFF438A7F))),
           SizedBox(height: 8),
           Text("B: 7:30 AM", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
           Text("D: 8:00PM", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),

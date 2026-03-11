@@ -17,7 +17,7 @@ dependencies:
   firebase_storage: ^13.0.6
 
   # Media Handling
-  image_picker: ^1.1.2
+  image_picker: ^1.2.1
 
   # Location (Attendance GPS)
   geolocator: ^13.0.1
@@ -41,10 +41,25 @@ dependencies:
 
   flutter_image_compress: ^2.3.0 # Required for size reduction
 
+  flutter_local_notifications: ^17.0.0
+  flutter_background_service: ^5.0.0
+  device_info_plus: ^10.1.0 # To identify the device
+
+  url_launcher: ^6.3.0
+  flutter_speed_dial: ^7.0.0
+  cached_network_image: ^3.4.1
+  uuid: ^4.5.3
+  firebase_messaging: ^16.1.2
+
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.2
+  flutter_launcher_icons: ^0.13.1
+
+image_picker: ^1.0.7
+uuid: ^4.3.3
 
 flutter:
   uses-material-design: true
@@ -53,3 +68,14 @@ flutter:
     - assets/images/gpcslogo.png
     - assets/images/logo.png
     - assets/student.json
+    - assets/images/warden1.png
+
+    - assets/student_data.json
+    - assets/images/appbg.png
+
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/flutterlogo.png"
+

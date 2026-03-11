@@ -5,7 +5,9 @@ import '../../styles.dart';
 import 'warden_complaint_view.dart';
 import 'merit_setup_view.dart';
 import 'leave_approval.dart';
-import 'warden_attendance_override.dart'; // NEW: Import for attendance override
+import 'warden_attendance_override.dart';
+// 1. Import the new profile screen
+import 'package:gpcs_hostel_portal/screens/warden/warden_profile.dart';
 
 class WardenDashboard extends StatefulWidget {
   const WardenDashboard({super.key});
@@ -49,15 +51,18 @@ class _WardenDashboardState extends State<WardenDashboard> {
     );
   }
 
+  // 2. Updated method to include WardenProfile
   Widget _buildBodyContent() {
     switch (_activeSection) {
       case 'Dashboard':
         return _buildProfessionalOverview();
+      case 'Profile Overview': // Added case for Profile screen
+        return const WardenProfile();
       case 'Merit Setup View':
         return const MeritSetupView();
       case 'Complaint Box':
         return const WardenComplaintView();
-      case 'Attendance Override': // NEW: Navigation Case
+      case 'Attendance Override':
         return const WardenAttendanceOverride();
       default:
         return Center(child: Text("Section: $_activeSection Under Development", style: const TextStyle(color: Colors.grey)));
@@ -97,7 +102,6 @@ class _WardenDashboardState extends State<WardenDashboard> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // NEW: Integrated Attendance Override Card
               Expanded(
                   flex: 2,
                   child: _buildDashboardSection(
@@ -134,7 +138,6 @@ class _WardenDashboardState extends State<WardenDashboard> {
     );
   }
 
-  // NEW: Manual Attendance Preview Module
   Widget _buildAttendanceModule() {
     return Column(
       children: [
@@ -199,30 +202,6 @@ class _WardenDashboardState extends State<WardenDashboard> {
           ),
           const Divider(height: 30),
           content,
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLiveAlertList() {
-    return Column(
-      children: [
-        _alertItem("Late Entry: Akshay Jain (A-101)", "11:45 PM", Colors.red),
-        _alertItem("Emergency: Water Leakage (B-203)", "11:30 PM", Colors.orange),
-        _alertItem("Plumbing: Riya Sharma (B-212)", "11:15 PM", Colors.red),
-      ],
-    );
-  }
-
-  Widget _alertItem(String text, String time, Color color) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 15),
-      child: Row(
-        children: [
-          Icon(Icons.error_outline, color: color, size: 22),
-          const SizedBox(width: 15),
-          Expanded(child: Text(text, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500))),
-          Text(time, style: const TextStyle(fontSize: 11, color: Colors.grey)),
         ],
       ),
     );
@@ -328,8 +307,8 @@ class _WardenDashboardState extends State<WardenDashboard> {
           _sidebarItem("Student Admission & Allotment", Icons.person_add_outlined),
           _sidebarItem("Student Profile View", Icons.person_search_outlined),
           _sidebarItem("Room & Bed Allocation", Icons.bed_outlined),
-          _sidebarTitle(" Attendance Management"), // NEW TITLE
-          _sidebarItem("Attendance Override", Icons.fact_check_outlined), // NEW ITEM
+          _sidebarTitle(" Attendance Management"),
+          _sidebarItem("Attendance Override", Icons.fact_check_outlined),
           _sidebarTitle(" Room & Hostel Status"),
           _sidebarItem("Vacant Room Status", Icons.meeting_room_outlined),
         ],

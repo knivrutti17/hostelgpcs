@@ -5,8 +5,10 @@ import 'package:gpcs_hostel_portal/screens/mobile/style/style.dart';
 import 'package:intl/intl.dart';
 import 'dart:io';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'pdfgenerator/complaint_pdf.dart';
 
 class RegisterComplaint extends StatefulWidget {
   const RegisterComplaint({super.key});
@@ -26,6 +28,11 @@ class _RegisterComplaintState extends State<RegisterComplaint> {
   File? _selectedImage;
   final ImagePicker _picker = ImagePicker();
   Stream<QuerySnapshot>? _complaintStream;
+
+  int _totalCount = 0;
+  int _resolvedCount = 0;
+  int _pendingCount = 0;
+  int _urgentCount = 0;
 
   final List<String> _categories = [
     "Electrical (Fan, Light, Switch)",
@@ -53,7 +60,6 @@ class _RegisterComplaintState extends State<RegisterComplaint> {
             .collection('complaints')
             .where('studentUid', isEqualTo: _currentRollNo)
             .orderBy('timestamp', descending: true)
-            .limit(5)
             .snapshots();
       }
     });
@@ -92,14 +98,13 @@ class _RegisterComplaintState extends State<RegisterComplaint> {
       String? base64ImageString;
       if (_selectedImage != null) {
         List<int> imageBytes = await _selectedImage!.readAsBytes();
-        base64ImageString = 'data:image/jpeg;base64,' + base64Encode(imageBytes);
+        base64ImageString = base64Encode(imageBytes);
       }
 
       final studentDoc = await FirebaseFirestore.instance.collection('users').doc(_currentRollNo!).get();
       if (!studentDoc.exists) throw "Hostel record not found.";
 
       var studentData = studentDoc.data() as Map<String, dynamic>;
-
       String complaintId = "${_currentRollNo}_${DateTime.now().millisecondsSinceEpoch}";
 
       await FirebaseFirestore.instance.collection('complaints').doc(complaintId).set({
@@ -125,6 +130,19 @@ class _RegisterComplaintState extends State<RegisterComplaint> {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red));
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // Helper for safe decoding
+  Uint8List? _safeDecode(String? imgStr) {
+    if (imgStr == null || imgStr.isEmpty) return null;
+    try {
+      // Handles both raw and prefixed Base64 data
+      String cleanBase64 = imgStr.contains(',') ? imgStr.split(',')[1] : imgStr;
+      return base64Decode(cleanBase64.trim());
+    } catch (e) {
+      debugPrint("Decode Error: $e");
+      return null;
     }
   }
 
@@ -180,12 +198,9 @@ class _RegisterComplaintState extends State<RegisterComplaint> {
                     ),
                   ),
                   const SizedBox(height: 20),
-
-                  // FIXED: Changed from Row to Column to prevent 13px Right Overflow
                   _toggle("Urgency:", ["Low", "Medium", "High"], _urgency, (v) => setState(() => _urgency = v)),
                   const SizedBox(height: 15),
                   _toggle("Send to:", ["Warden", "HOD"], _sendTo, (v) => setState(() => _sendTo = v)),
-
                   const SizedBox(height: 25),
                   SizedBox(
                     width: double.infinity, height: 50,
@@ -200,9 +215,15 @@ class _RegisterComplaintState extends State<RegisterComplaint> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text("Recent Complaints", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                      TextButton(
-                        onPressed: () => Navigator.pushNamed(context, '/complaint_history'),
-                        child: const Text("View All", style: TextStyle(color: AppStyle.darkTeal, fontSize: 12)),
+                      ElevatedButton.icon(
+                        onPressed: () {}, // Download logic
+                        icon: const Icon(Icons.picture_as_pdf, size: 16, color: Colors.white),
+                        label: const Text("DOWNLOAD REPORT", style: TextStyle(color: Colors.white, fontSize: 11)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.teal.shade700,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
                       ),
                     ],
                   ),
@@ -217,14 +238,13 @@ class _RegisterComplaintState extends State<RegisterComplaint> {
     );
   }
 
-  // UPDATED TOGGLE: Now takes full width of the parent for better UI alignment
   Widget _toggle(String title, List<String> opts, String cur, Function(String) onSel) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
         const SizedBox(height: 8),
-        Wrap( // Using Wrap instead of Row for extra safety against overflow
+        Wrap(
           spacing: 8.0,
           children: opts.map((o) => ChoiceChip(
             label: Text(o, style: TextStyle(fontSize: 11, color: cur == o ? Colors.white : Colors.black)),
@@ -241,26 +261,18 @@ class _RegisterComplaintState extends State<RegisterComplaint> {
     return StreamBuilder<QuerySnapshot>(
       stream: _complaintStream,
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const SizedBox();
+        if (!snapshot.hasData) return const Center(child: Text("No complaints found."));
+
+        final displayDocs = snapshot.data!.docs.take(5).toList();
+
         return ListView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          itemCount: snapshot.data!.docs.length,
+          itemCount: displayDocs.length,
           itemBuilder: (context, index) {
-            var data = snapshot.data!.docs[index].data() as Map<String, dynamic>;
-
-            Color statusColor = Colors.orange;
-            Color statusBg = Colors.orange.withOpacity(0.1);
-
-            if (data['status'] == 'Resolved') {
-              statusColor = Colors.green;
-              statusBg = Colors.green.withOpacity(0.1);
-            } else if (data['status'] == 'Rejected') {
-              statusColor = Colors.red;
-              statusBg = Colors.red.withOpacity(0.1);
-            }
-
-            String? imgStr = data['imageString'];
+            var data = displayDocs[index].data() as Map<String, dynamic>;
+            Color statusColor = data['status'] == 'Resolved' ? Colors.green : Colors.orange;
+            Uint8List? imageBytes = _safeDecode(data['imageString']);
 
             return Container(
               margin: const EdgeInsets.only(top: 10),
@@ -272,53 +284,15 @@ class _RegisterComplaintState extends State<RegisterComplaint> {
               ),
               child: ListTile(
                 contentPadding: const EdgeInsets.all(12),
-                leading: imgStr != null
+                leading: (imageBytes != null)
                     ? ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: Image.memory(
-                    base64Decode(imgStr.contains(',') ? imgStr.split(',')[1] : imgStr),
-                    width: 50, height: 50, fit: BoxFit.cover,
-                  ),
+                  child: Image.memory(imageBytes, width: 50, height: 50, fit: BoxFit.cover),
                 )
                     : const CircleAvatar(backgroundColor: Color(0xFFE3F2FD), child: Icon(Icons.build, color: Colors.blue)),
                 title: Text(data['category'] ?? "General", style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 4),
-                    Text(data['description'] ?? "", maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
-                    if (data['resolutionText'] != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4.0),
-                        child: Text(
-                          "Note: ${data['resolutionText']}",
-                          style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.grey[700]),
-                        ),
-                      ),
-                  ],
-                ),
-                trailing: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      data['timestamp'] != null ? DateFormat('MMM dd').format((data['timestamp'] as Timestamp).toDate()) : "Recent",
-                      style: const TextStyle(fontSize: 10, color: Colors.grey),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: statusBg,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        data['status']?.toUpperCase() ?? "PENDING",
-                        style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 9),
-                      ),
-                    ),
-                  ],
-                ),
+                subtitle: Text(data['description'] ?? "", maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+                trailing: Text(data['status']?.toUpperCase() ?? "PENDING", style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 10)),
               ),
             );
           },
