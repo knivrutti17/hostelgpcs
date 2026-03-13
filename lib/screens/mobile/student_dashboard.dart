@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'dart:convert'; // Required for Base64 image decoding
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -214,8 +216,6 @@ class HomeContent extends StatelessWidget {
 
               var data = snapshot.data!.data() as Map<String, dynamic>;
 
-              // --- REQUIREMENT: AUTOMATIC CHAT INITIALIZATION ---
-              // Creates the "Real" Firestore storage for Public, Room, and Notice chats
               String roomNo = data['roomNo'] ?? "Unknown";
               ChatService().initializeHostelChats(roomNo);
 
@@ -228,7 +228,13 @@ class HomeContent extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10),
                       child: Column(
                         children: [
-                          _buildHostelIDCard(data['name'] ?? "Student", data['rollNo'] ?? "N/A", data['roomNo'] ?? "N/A"),
+                          // --- UPDATED: Passing Profile Image URL ---
+                          _buildHostelIDCard(
+                            data['name'] ?? "Student",
+                            data['rollNo'] ?? "N/A",
+                            data['roomNo'] ?? "N/A",
+                            data['photoUrl'], // Map to Firebase field
+                          ),
                           const SizedBox(height: 20),
                           Row(
                             children: [
@@ -244,7 +250,13 @@ class HomeContent extends StatelessWidget {
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Expanded(child: ProfessionalCard(child: _buildAnnouncements())),
+                              // --- UPDATED: Open Announcement Screen on Tap ---
+                              Expanded(
+                                child: ProfessionalCard(
+                                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AnnouncementCenter())),
+                                  child: _buildAnnouncements(),
+                                ),
+                              ),
                               const SizedBox(width: 15),
                               Expanded(child: ProfessionalCard(child: _buildMealSchedule())),
                             ],
@@ -413,7 +425,8 @@ class HomeContent extends StatelessWidget {
     );
   }
 
-  Widget _buildHostelIDCard(String name, String roll, String room) {
+  // --- UPDATED: Renders Profile Image from Base64 ---
+  Widget _buildHostelIDCard(String name, String roll, String room, String? photoUrl) {
     return ProfessionalCard(
       child: Container(
         padding: const EdgeInsets.all(20),
@@ -422,7 +435,16 @@ class HomeContent extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(3),
               decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: const Color(0xFF438A7F), width: 2)),
-              child: CircleAvatar(radius: 35, backgroundColor: const Color(0xFFA1E7D1), child: const Icon(Icons.person, size: 40, color: const Color(0xFF438A7F))),
+              child: CircleAvatar(
+                radius: 35,
+                backgroundColor: const Color(0xFFA1E7D1),
+                backgroundImage: (photoUrl != null && photoUrl.isNotEmpty)
+                    ? MemoryImage(base64Decode(photoUrl))
+                    : null,
+                child: (photoUrl == null || photoUrl.isEmpty)
+                    ? const Icon(Icons.person, size: 40, color: Color(0xFF438A7F))
+                    : null,
+              ),
             ),
             const SizedBox(width: 20),
             Expanded(
@@ -521,22 +543,30 @@ class HomeContent extends StatelessWidget {
   }
 
   Widget _buildAnnouncements() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text("UPDATES", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.blueGrey)),
-          const SizedBox(height: 10),
-          _annoRow(Icons.campaign_rounded, "New Menu Out"),
-          _annoRow(Icons.event_note_rounded, "Yoga session"),
-        ],
-      ),
+    return StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance.collection('notices').orderBy('timestamp', descending: true).limit(2).snapshots(),
+        builder: (context, snapshot) {
+          final docs = snapshot.data?.docs ?? [];
+          return Container(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text("UPDATES", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.blueGrey)),
+                const SizedBox(height: 10),
+                if (docs.isEmpty)
+                  const Text("No recent updates", style: TextStyle(fontSize: 10, color: Colors.grey))
+                else
+                  ...docs.map((d) => _annoRow(Icons.campaign_rounded, d['title'] ?? "")).toList(),
+              ],
+            ),
+          );
+        }
     );
   }
 
   Widget _annoRow(IconData i, String t) {
-    return Padding(padding: const EdgeInsets.only(bottom: 6), child: Row(children: [Icon(i, size: 14, color: const Color(0xFF438A7F)), const SizedBox(width: 8), Text(t, style: const TextStyle(fontSize: 10))]));
+    return Padding(padding: const EdgeInsets.only(bottom: 6), child: Row(children: [Icon(i, size: 14, color: const Color(0xFF438A7F)), const SizedBox(width: 8), Expanded(child: Text(t, style: const TextStyle(fontSize: 10), overflow: TextOverflow.ellipsis))]));
   }
 
   Widget _buildMealSchedule() {
@@ -551,6 +581,50 @@ class HomeContent extends StatelessWidget {
           Text("B: 7:30 AM", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
           Text("D: 8:00PM", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
         ],
+      ),
+    );
+  }
+}
+
+// --- NEW CLASS: FULL SCREEN ANNOUNCEMENT CENTER ---
+class AnnouncementCenter extends StatelessWidget {
+  const AnnouncementCenter({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        title: const Text("Announcement Center", style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF438A7F), fontSize: 18)),
+        backgroundColor: Colors.white, elevation: 0, centerTitle: true,
+        leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black, size: 20), onPressed: () => Navigator.pop(context)),
+      ),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance.collection('notices').orderBy('timestamp', descending: true).snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+          final docs = snapshot.data!.docs;
+          if (docs.isEmpty) return const Center(child: Text("No notices posted yet."));
+          return ListView.builder(
+            padding: const EdgeInsets.all(20),
+            itemCount: docs.length,
+            itemBuilder: (context, index) {
+              var d = docs[index].data() as Map<String, dynamic>;
+              return Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(color: const Color(0xFFF1F8F7), borderRadius: BorderRadius.circular(16)),
+                child: Row(
+                  children: [
+                    const Icon(Icons.campaign_rounded, color: Color(0xFF438A7F), size: 28),
+                    const SizedBox(width: 15),
+                    Expanded(child: Text(d['title'] ?? "", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
+                  ],
+                ),
+              );
+            },
+          );
+        },
       ),
     );
   }

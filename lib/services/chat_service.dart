@@ -1,9 +1,11 @@
 import 'dart:io';
+import 'dart:convert'; // Required for Base64 encoding
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:uuid/uuid.dart';
-import 'package:gpcs_hostel_portal/models/message_model.dart'; //// Ensure this import matches your project structure
+import 'package:gpcs_hostel_portal/models/message_model.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart'; // REQUIRED: Add to pubspec.yaml
+
 class ChatService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
@@ -18,30 +20,56 @@ class ChatService {
         .snapshots();
   }
 
-  // Upload image to Firebase Storage and return the URL
+  // --- UPDATED: COMPRESS AND CONVERT TO BASE64 FOR FIRESTORE ---
   Future<String?> uploadChatImage(File image) async {
     try {
-      String fileName = const Uuid().v4();
-      Reference ref = FirebaseStorage.instance.ref().child('chat_images/$fileName');
-      SettableMetadata metadata = SettableMetadata(contentType: 'image/jpeg');
+      final filePath = image.absolute.path;
+      final lastIndex = filePath.lastIndexOf(RegExp(r'.png|.jpg|.jpeg'));
+      final splitted = filePath.substring(0, (lastIndex));
+      final outPath = "${splitted}_out${filePath.substring(lastIndex)}";
 
-      UploadTask uploadTask = ref.putFile(image, metadata);
-      TaskSnapshot snapshot = await uploadTask;
-      return await snapshot.ref.getDownloadURL();
+      // 1. COMPRESS: Shrink image quality to 25% for instant Firestore upload
+      var result = await FlutterImageCompress.compressAndGetFile(
+        image.absolute.path,
+        outPath,
+        quality: 25,
+        minWidth: 600,
+        minHeight: 600,
+      );
+
+      if (result == null) return null;
+
+      // 2. CONVERT: Read bytes and convert to Base64 String
+      List<int> imageBytes = await File(result.path).readAsBytes();
+      String base64Image = base64Encode(imageBytes);
+
+      // 3. CLEANUP: Remove the temporary compressed file from device storage
+      try {
+        final file = File(result.path);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      } catch (e) {
+        debugPrint("Cleanup error: $e");
+      }
+
+      debugPrint("Image compressed and encoded to Base64 successfully");
+      return base64Image;
     } catch (e) {
-      debugPrint("Error uploading image: $e");
+      debugPrint("Compression/Encoding Error: $e");
       return null;
     }
   }
 
-  // Send message and update the parent chat document
+  // --- UPDATED: Send message directly to Firestore ---
   Future<void> sendMessage({
     required String chatId,
     required String senderId,
     required String senderName,
+    required String senderRole,
     required String text,
     String type = 'text',
-    String? imageUrl,
+    String? imageUrl, // This now receives the Base64 String
   }) async {
     try {
       final WriteBatch batch = _db.batch();
@@ -52,41 +80,53 @@ class ChatService {
           .collection('messages')
           .doc();
 
+      // Normalize role for UI labels
+      String roleToSave = senderRole;
+      if (senderId == 'STAFF' || senderName.toLowerCase().contains('warden')) {
+        roleToSave = 'Warden';
+      }
+
       batch.set(messageRef, {
         'senderId': senderId,
         'senderName': senderName,
+        'senderRole': roleToSave,
         'messageText': text,
         'type': type,
-        'imageUrl': imageUrl,
+        'imageUrl': imageUrl, // Saves the Base64 string in Firestore
         'timestamp': FieldValue.serverTimestamp(),
-        'isDeleted': false, // Initialize as false
+        'isDeleted': false,
+        'isPinned': false,
       });
 
       DocumentReference chatRef = _db.collection('chats').doc(chatId);
 
+      String displaySender = (roleToSave == 'Warden' || roleToSave == 'Admin')
+          ? "Warden"
+          : senderName;
+
       batch.set(chatRef, {
         'lastMessage': type == 'image' ? '📷 Photo' : text,
         'lastTimestamp': FieldValue.serverTimestamp(),
-        'lastSender': senderName,
+        'lastSender': displaySender,
       }, SetOptions(merge: true));
 
       await batch.commit();
+      debugPrint("Message successfully saved in Firestore");
     } catch (e) {
-      debugPrint("Error sending message: $e");
+      debugPrint("Firestore Send Error: $e");
     }
   }
 
-  // --- NEW: DELETE MESSAGE (WhatsApp Style) ---
+  // --- DELETE MESSAGE ---
   Future<void> deleteMessage(String chatId, String messageId, String studentName) async {
     try {
       await _db.collection('chats').doc(chatId).collection('messages').doc(messageId).update({
         'messageText': "This message was deleted",
         'isDeleted': true,
-        'type': 'text', // Reset type so images are no longer rendered
-        'imageUrl': null, // Remove image reference
+        'type': 'text',
+        'imageUrl': null,
       });
 
-      // Optional: Update lastMessage in the list view to show deletion
       await _db.collection('chats').doc(chatId).update({
         'lastMessage': "🚫 Message deleted",
       });
@@ -95,7 +135,7 @@ class ChatService {
     }
   }
 
-  // --- NEW: SHARE MESSAGE (Forwarding) ---
+  // --- SHARE MESSAGE ---
   Future<void> shareMessage({
     required String toChatId,
     required MessageModel originalMsg,
@@ -103,11 +143,11 @@ class ChatService {
     required String senderName,
   }) async {
     try {
-      // Forwarding logic: Sends the content of the original message as a new message
       await sendMessage(
         chatId: toChatId,
         senderId: senderId,
         senderName: senderName,
+        senderRole: originalMsg.senderRole,
         text: originalMsg.messageText,
         type: originalMsg.messageType,
         imageUrl: originalMsg.imageUrl,
@@ -117,7 +157,7 @@ class ChatService {
     }
   }
 
-  // Initialize default chat rooms for a new student
+  // --- INITIALIZE CHATS ---
   Future<void> initializeHostelChats(String roomNo) async {
     try {
       List<Map<String, String>> defaultChats = [
@@ -133,6 +173,7 @@ class ChatService {
           'lastMessage': 'Welcome to ${chat['name']}!',
           'lastTimestamp': FieldValue.serverTimestamp(),
           'unreadCount': 0,
+          'isLocked': false,
         }, SetOptions(merge: true));
       }
     } catch (e) {

@@ -9,68 +9,86 @@ class ChatListScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF9FAFB),
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: const Color(0xFF438A7F),
-        title: const Text("Hostel Chat",
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        actions: [
-          IconButton(icon: const Icon(Icons.search, color: Colors.white), onPressed: () {}),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildSectionHeader("Public Chats"),
-            _buildFirestoreSection('public'),
+    return FutureBuilder<SharedPreferences>(
+      future: SharedPreferences.getInstance(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
 
-            const SizedBox(height: 25),
+        // Get the role: 'Admin', 'Warden', or 'Student'
+        String userRole = snapshot.data!.getString('user_role') ?? "Student";
+        bool isStaff = userRole == 'Admin' || userRole == 'Warden';
 
-            _buildSectionHeader("Roommate Chats"),
-            // UPDATED: Now calls the filtered room section
-            _buildRoommateSection(),
+        return Scaffold(
+          backgroundColor: const Color(0xFFF9FAFB),
+          appBar: AppBar(
+            elevation: 0,
+            backgroundColor: const Color(0xFF438A7F),
+            iconTheme: const IconThemeData(color: Colors.white),
+            title: Text(
+              isStaff ? "Staff Chat Management" : "Hostel Chat",
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.search, color: Colors.white),
+                onPressed: () {},
+              ),
+            ],
+          ),
+          body: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSectionHeader("Public Chats"),
+                _buildFirestoreSection('public', userRole),
 
-            const SizedBox(height: 25),
+                const SizedBox(height: 25),
 
-            _buildSectionHeader("Notice Board"),
-            _buildFirestoreSection('notice'),
-          ],
-        ),
-      ),
-      floatingActionButton: SizedBox(
-        width: 65,
-        height: 65,
-        child: FloatingActionButton(
-          onPressed: () {},
-          backgroundColor: const Color(0xFF438A7F),
-          shape: const CircleBorder(),
-          child: const Icon(Icons.add, color: Colors.white, size: 35),
-        ),
-      ),
+                // ONLY show Roommate Chats if the user is a Student
+                if (!isStaff) ...[
+                  _buildSectionHeader("Roommate Chats"),
+                  _buildRoommateSection(userRole),
+                  const SizedBox(height: 25),
+                ],
+
+                _buildSectionHeader("Official Notices"),
+                _buildFirestoreSection('notice', userRole),
+              ],
+            ),
+          ),
+          floatingActionButton: isStaff
+              ? FloatingActionButton(
+            onPressed: () {},
+            backgroundColor: const Color(0xFF438A7F),
+            child: const Icon(Icons.add, color: Colors.white),
+          )
+              : null,
+        );
+      },
     );
   }
 
-  // NEW FUNCTION: Filters chats to only show the student's specific room
-  Widget _buildRoommateSection() {
+  Widget _buildRoommateSection(String userRole) {
     return FutureBuilder<SharedPreferences>(
       future: SharedPreferences.getInstance(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const SizedBox();
 
-        // Get the student's room number saved during login
         String? myRoom = snapshot.data!.getString('user_room');
 
-        if (myRoom == null) return const Padding(
-          padding: EdgeInsets.all(8.0),
-          child: Text("No room assigned", style: TextStyle(color: Colors.grey)),
-        );
+        if (myRoom == null) {
+          return const Padding(
+            padding: EdgeInsets.all(8.0),
+            child: Text("No room assigned", style: TextStyle(color: Colors.grey)),
+          );
+        }
 
         return StreamBuilder<QuerySnapshot>(
-          // FILTER: Only show the chat where the document ID is 'room_YOURROOM'
           stream: FirebaseFirestore.instance
               .collection('chats')
               .where('type', isEqualTo: 'room')
@@ -78,14 +96,16 @@ class ChatListScreen extends StatelessWidget {
               .snapshots(),
           builder: (context, chatSnapshot) {
             if (!chatSnapshot.hasData) return const SizedBox();
-            if (chatSnapshot.data!.docs.isEmpty) return const Padding(
-              padding: EdgeInsets.all(8.0),
-              child: Text("Your room chat is not active.", style: TextStyle(color: Colors.grey)),
-            );
+            if (chatSnapshot.data!.docs.isEmpty) {
+              return const Padding(
+                padding: EdgeInsets.all(8.0),
+                child: Text("Your room chat is not active.", style: TextStyle(color: Colors.grey)),
+              );
+            }
 
             return Column(
               children: chatSnapshot.data!.docs.map((chat) {
-                return _buildChatCard(context, chat, 'room');
+                return _buildChatCard(context, chat, 'room', userRole);
               }).toList(),
             );
           },
@@ -104,7 +124,7 @@ class ChatListScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildFirestoreSection(String type) {
+  Widget _buildFirestoreSection(String type, String userRole) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('chats')
@@ -116,14 +136,14 @@ class ChatListScreen extends StatelessWidget {
 
         return Column(
           children: snapshot.data!.docs.map((chat) {
-            return _buildChatCard(context, chat, type);
+            return _buildChatCard(context, chat, type, userRole);
           }).toList(),
         );
       },
     );
   }
 
-  Widget _buildChatCard(BuildContext context, DocumentSnapshot chat, String type) {
+  Widget _buildChatCard(BuildContext context, DocumentSnapshot chat, String type, String userRole) {
     final data = chat.data() as Map<String, dynamic>;
 
     IconData iconData = Icons.public;
@@ -141,7 +161,9 @@ class ChatListScreen extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))],
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))
+        ],
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -168,7 +190,7 @@ class ChatListScreen extends StatelessWidget {
           ),
         ),
         trailing: _buildTrailingWidget(chat),
-        onTap: () => _handleNavigation(context, chat),
+        onTap: () => _handleNavigation(context, chat, userRole),
       ),
     );
   }
@@ -201,19 +223,37 @@ class ChatListScreen extends StatelessWidget {
     );
   }
 
-  void _handleNavigation(BuildContext context, DocumentSnapshot chat) async {
+  // --- UPDATED NAVIGATION LOGIC ---
+  void _handleNavigation(BuildContext context, DocumentSnapshot chat, String userRole) async {
     final prefs = await SharedPreferences.getInstance();
-    String rollNo = prefs.getString('user_roll') ?? "";
-    var userDoc = await FirebaseFirestore.instance.collection('users').doc(rollNo).get();
-    String realName = userDoc.exists ? userDoc['name'] : "Student";
 
-    Navigator.push(context, MaterialPageRoute(
-      builder: (context) => ChatRoomScreen(
-        chatId: chat.id,
-        chatName: chat['name'],
-        userRollNo: rollNo,
-        userName: realName,
+    // 1. Get basic stored data
+    String rollNo = prefs.getString('user_roll') ?? "STAFF";
+    String storedName = prefs.getString('user_name') ?? "User";
+
+    // 2. Fetch specific student name from Firestore if necessary
+    String displayName = storedName;
+    if (userRole == 'Student') {
+      var userDoc = await FirebaseFirestore.instance.collection('users').doc(rollNo).get();
+      if (userDoc.exists) {
+        displayName = userDoc['name'];
+      }
+    }
+
+    if (!context.mounted) return;
+
+    // 3. Navigate with the correct Role and Name
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatRoomScreen(
+          chatId: chat.id,
+          chatName: chat['name'] ?? "Chat Room",
+          userRollNo: rollNo,
+          userName: displayName,
+          userRole: userRole, // Ensures Warden/Admin identity is passed
+        ),
       ),
-    ));
+    );
   }
 }
