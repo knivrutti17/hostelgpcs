@@ -1,29 +1,25 @@
-import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ComplaintPdfGenerator {
+  // FIXED: Method signature now matches the call from complain.dart
   static Future<void> generateAndDownload({
-    required List<Map<String, dynamic>> complaints,
-    // Parameters kept for compatibility, but UI buttons are removed as requested
-    required int total,
-    required int resolved,
-    required int pending,
-    required int urgent,
+    required List<QueryDocumentSnapshot> docs,
+    required String rollNo,
   }) async {
     final pdf = pw.Document();
 
-    // Load College Logo from the specified path
+    // Load College Logo from assets
     pw.MemoryImage? logoImage;
     try {
-      // Ensure this matches the exact path in your pubspec.yaml
       final bytes = await rootBundle.load('assets/gpcslogo.png');
       logoImage = pw.MemoryImage(bytes.buffer.asUint8List());
     } catch (e) {
-      // If logo fails to load, the header will still align properly without it
+      // Logo fail fallback
     }
 
     pdf.addPage(
@@ -31,70 +27,94 @@ class ComplaintPdfGenerator {
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(35),
         header: (pw.Context context) => _buildProfessionalHeader(logoImage),
-        footer: (pw.Context context) => _buildCreativeFooter(context),
+        footer: (pw.Context context) => _buildProfessionalFooter(context),
         build: (pw.Context context) => [
+          pw.SizedBox(height: 10),
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Text("Student Enrollment: $rollNo",
+                  style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+              pw.Text("Academic Year: 2024-25",
+                  style: const pw.TextStyle(fontSize: 10)),
+            ],
+          ),
           pw.SizedBox(height: 20),
-
           pw.Text(
-            "Detailed Complaint Management Records",
+            "OFFICIAL COMPLAINT LODGED RECORDS",
             style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColors.blueGrey900),
           ),
           pw.SizedBox(height: 15),
 
           // PROFESSIONAL DATA TABLE
           pw.TableHelper.fromTextArray(
-            headers: ["#", "Category & Description", "Room", "Urgency", "Status"],
+            headers: ["#", "Category", "Description", "Urgency", "Status"],
             data: List<List<dynamic>>.generate(
-              complaints.length,
+              docs.length,
                   (index) {
-                final c = complaints[index];
+                final data = docs[index].data() as Map<String, dynamic>;
                 return [
                   (index + 1).toString(),
-                  "${c['category'] ?? "General"}\n${c['description'] ?? "N/A"}",
-                  c['roomNo'] ?? "---",
-                  c['urgency'] ?? "Low",
-                  c['status']?.toUpperCase() ?? "PENDING",
+                  data['category'] ?? "General",
+                  data['description'] ?? "N/A",
+                  data['urgency'] ?? "Normal",
+                  data['status']?.toUpperCase() ?? "PENDING",
                 ];
               },
             ),
             headerStyle: pw.TextStyle(color: PdfColors.white, fontWeight: pw.FontWeight.bold, fontSize: 10),
-            headerDecoration: const pw.BoxDecoration(color: PdfColors.blueGrey800),
+            headerDecoration: const pw.BoxDecoration(color: PdfColors.teal800),
             cellHeight: 35,
             cellStyle: const pw.TextStyle(fontSize: 9),
             columnWidths: {
               0: const pw.FixedColumnWidth(25),
-              1: const pw.FlexColumnWidth(),
-              2: const pw.FixedColumnWidth(50),
+              1: const pw.FixedColumnWidth(100),
+              2: const pw.FlexColumnWidth(),
               3: const pw.FixedColumnWidth(60),
               4: const pw.FixedColumnWidth(70),
             },
             cellAlignment: pw.Alignment.centerLeft,
             cellAlignments: {
               0: pw.Alignment.center,
-              2: pw.Alignment.center,
               3: pw.Alignment.center,
               4: pw.Alignment.center,
             },
-            // Striped row decoration
             oddRowDecoration: const pw.BoxDecoration(color: PdfColors.grey50),
-            border: pw.TableBorder.all(color: PdfColors.grey200, width: 0.5),
+            border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
           ),
+
+          pw.SizedBox(height: 50),
+
+          // SIGNATURE SECTION
+          pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.end,
+              children: [
+                pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.center,
+                    children: [
+                      pw.SizedBox(width: 120, child: pw.Divider(thickness: 1)),
+                      pw.Text("Student Signature", style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+                      pw.SizedBox(height: 30),
+                      pw.SizedBox(width: 120, child: pw.Divider(thickness: 1)),
+                      pw.Text("Warden Signature", style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+                    ]
+                )
+              ]
+          )
         ],
       ),
     );
 
-    // Triggers the system print/save dialog
     await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
   }
 
-  // UPDATED HEADER: Logo on Top Left with College Branding
   static pw.Widget _buildProfessionalHeader(pw.MemoryImage? logo) {
     return pw.Column(
       children: [
         pw.Row(
           crossAxisAlignment: pw.CrossAxisAlignment.center,
           children: [
-            if (logo != null) pw.Image(logo, width: 60),
+            if (logo != null) pw.Image(logo, width: 60, height: 60),
             pw.SizedBox(width: 20),
             pw.Expanded(
               child: pw.Column(
@@ -102,23 +122,22 @@ class ComplaintPdfGenerator {
                 children: [
                   pw.Text("GOVERNMENT POLYTECHNIC, CHHATRAPATI SAMBHAJINAGAR",
                       style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 13, color: PdfColors.black)),
-                  pw.Text("BOYS HOSTEL PORTAL",
-                      style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12, color: PdfColors.blue800)),
-                  pw.Text("Online Academic Management System",
-                      style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
+                  pw.Text("HOSTEL PORTAL MANAGEMENT SYSTEM",
+                      style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11, color: PdfColors.teal900)),
+                  pw.Text("Official Complaint History Report",
+                      style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey700)),
                 ],
               ),
             ),
           ],
         ),
         pw.SizedBox(height: 10),
-        pw.Divider(thickness: 1.5, color: PdfColors.blueGrey100),
+        pw.Divider(thickness: 1.5, color: PdfColors.teal900),
       ],
     );
   }
 
-  // UPDATED FOOTER: Professional Bottom Bar
-  static pw.Widget _buildCreativeFooter(pw.Context context) {
+  static pw.Widget _buildProfessionalFooter(pw.Context context) {
     final dateStr = DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.now());
     return pw.Column(
       children: [
@@ -126,27 +145,13 @@ class ComplaintPdfGenerator {
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            pw.Text("Auto-generated by GPCH Hostel Portal",
+            pw.Text("Generated via GPCS Hostel App",
                 style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
-            pw.Text("Generated on: $dateStr",
+            pw.Text("Report Date: $dateStr",
                 style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
             pw.Text("Page ${context.pageNumber} of ${context.pagesCount}",
                 style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
           ],
-        ),
-        pw.SizedBox(height: 10),
-        // PROFESSIONAL CONTACT STRIP
-        pw.Container(
-          padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 10),
-          decoration: const pw.BoxDecoration(color: PdfColors.grey100),
-          child: pw.Row(
-            mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
-            children: [
-              pw.Text("Web: www.gpch.edu.in", style: const pw.TextStyle(fontSize: 8, color: PdfColors.blueGrey800)),
-              pw.Text("Email: info@gpch.edu.in", style: const pw.TextStyle(fontSize: 8, color: PdfColors.blueGrey800)),
-              pw.Text("Location: Sambhajinagar, MH", style: const pw.TextStyle(fontSize: 8, color: PdfColors.blueGrey800)),
-            ],
-          ),
         ),
       ],
     );

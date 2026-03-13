@@ -13,6 +13,8 @@ import 'package:gpcs_hostel_portal/screens/mobile/style/style.dart';
 import 'package:gpcs_hostel_portal/screens/mobile/request_leave.dart';
 import 'package:gpcs_hostel_portal/screens/mobile/attendance_history.dart';
 import 'package:gpcs_hostel_portal/screens/mobile/student_fees.dart';
+import 'package:gpcs_hostel_portal/screens/mobile/mess_menu_page.dart';
+import 'package:gpcs_hostel_portal/screens/mobile/emergency_contacts_page.dart'; // IMPORT EMERGENCY PAGE
 
 // Import the new Services and Chat Screens
 import 'package:gpcs_hostel_portal/services/download_service.dart';
@@ -216,6 +218,7 @@ class HomeContent extends StatelessWidget {
 
               var data = snapshot.data!.data() as Map<String, dynamic>;
 
+              // --- REQUIREMENT: AUTOMATIC CHAT INITIALIZATION ---
               String roomNo = data['roomNo'] ?? "Unknown";
               ChatService().initializeHostelChats(roomNo);
 
@@ -228,12 +231,12 @@ class HomeContent extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10),
                       child: Column(
                         children: [
-                          // --- UPDATED: Passing Profile Image URL ---
+                          // --- UPDATED: Pass photoUrl for Profile Image ---
                           _buildHostelIDCard(
                             data['name'] ?? "Student",
                             data['rollNo'] ?? "N/A",
                             data['roomNo'] ?? "N/A",
-                            data['photoUrl'], // Map to Firebase field
+                            data['photoUrl'],
                           ),
                           const SizedBox(height: 20),
                           Row(
@@ -250,15 +253,29 @@ class HomeContent extends StatelessWidget {
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // --- UPDATED: Open Announcement Screen on Tap ---
+                              // --- UPDATED: Navigation to Announcement Center ---
                               Expanded(
                                 child: ProfessionalCard(
-                                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AnnouncementCenter())),
-                                  child: _buildAnnouncements(),
+                                  onTap: () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute(builder: (context) => const AnnouncementCenter())
+                                  ),
+                                  child: Hero(tag: 'updates_expand', child: _buildAnnouncements()),
                                 ),
                               ),
                               const SizedBox(width: 15),
-                              Expanded(child: ProfessionalCard(child: _buildMealSchedule())),
+                              // --- UPDATED: Navigation to Mess Menu Page ---
+                              Expanded(
+                                child: ProfessionalCard(
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(builder: (context) => const MessMenuPage()),
+                                    );
+                                  },
+                                  child: _buildMealSchedule(),
+                                ),
+                              ),
                             ],
                           ),
                           const SizedBox(height: 20),
@@ -268,7 +285,18 @@ class HomeContent extends StatelessWidget {
                           const SizedBox(height: 20),
                           Row(
                             children: [
-                              Expanded(child: ProfessionalCard(child: _buildEmergencyCard())),
+                              // --- UPDATED EMERGENCY TAB: WORKING ---
+                              Expanded(
+                                child: ProfessionalCard(
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(builder: (context) => const EmergencyContactsPage()),
+                                    );
+                                  },
+                                  child: _buildEmergencyCard(),
+                                ),
+                              ),
                               const SizedBox(width: 15),
                               Expanded(child: ProfessionalCard(
                                 onTap: () {
@@ -425,7 +453,7 @@ class HomeContent extends StatelessWidget {
     );
   }
 
-  // --- UPDATED: Renders Profile Image from Base64 ---
+  // --- UPDATED: Renders Profile Image from photoUrl Base64 ---
   Widget _buildHostelIDCard(String name, String roll, String room, String? photoUrl) {
     return ProfessionalCard(
       child: Container(
@@ -442,7 +470,7 @@ class HomeContent extends StatelessWidget {
                     ? MemoryImage(base64Decode(photoUrl))
                     : null,
                 child: (photoUrl == null || photoUrl.isEmpty)
-                    ? const Icon(Icons.person, size: 40, color: Color(0xFF438A7F))
+                    ? const Icon(Icons.person, size: 40, color: const Color(0xFF438A7F))
                     : null,
               ),
             ),
@@ -542,6 +570,7 @@ class HomeContent extends StatelessWidget {
     );
   }
 
+  // --- UPDATED: Listen to Real-time Notices ---
   Widget _buildAnnouncements() {
     return StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance.collection('notices').orderBy('timestamp', descending: true).limit(2).snapshots(),

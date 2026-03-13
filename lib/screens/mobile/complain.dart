@@ -8,6 +8,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
+// Ensure this import path is correct based on your project structure
 import 'pdfgenerator/complaint_pdf.dart';
 
 class RegisterComplaint extends StatefulWidget {
@@ -23,16 +24,12 @@ class _RegisterComplaintState extends State<RegisterComplaint> {
   String _sendTo = "Warden";
   final _descriptionController = TextEditingController();
   bool _isLoading = false;
+  bool _isPdfLoading = false;
   String? _currentRollNo;
 
   File? _selectedImage;
   final ImagePicker _picker = ImagePicker();
   Stream<QuerySnapshot>? _complaintStream;
-
-  int _totalCount = 0;
-  int _resolvedCount = 0;
-  int _pendingCount = 0;
-  int _urgentCount = 0;
 
   final List<String> _categories = [
     "Electrical (Fan, Light, Switch)",
@@ -87,6 +84,41 @@ class _RegisterComplaintState extends State<RegisterComplaint> {
     }
   }
 
+  // FIXED: Corrected named parameter labels to match ComplaintPdfGenerator.generateAndDownload logic
+  Future<void> _downloadComplaintReport() async {
+    if (_currentRollNo == null) return;
+
+    setState(() => _isPdfLoading = true);
+    try {
+      // Fetch latest data to ensure PDF is accurate
+      QuerySnapshot snapshot = await FirebaseFirestore.instance
+          .collection('complaints')
+          .where('studentUid', isEqualTo: _currentRollNo)
+          .orderBy('timestamp', descending: true)
+          .get();
+
+      if (snapshot.docs.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("No complaints found to generate report."))
+        );
+        return;
+      }
+
+      // Trigger the external PDF generator logic using NAMED ARGUMENTS
+      // Updated to match your specific ComplaintPdfGenerator definition
+      await ComplaintPdfGenerator.generateAndDownload(
+        docs: snapshot.docs,
+        rollNo: _currentRollNo!,
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("PDF Error: $e"), backgroundColor: Colors.red)
+      );
+    } finally {
+      if (mounted) setState(() => _isPdfLoading = false);
+    }
+  }
+
   Future<void> _submitComplaint() async {
     if (_selectedCategory == null || _descriptionController.text.isEmpty || _currentRollNo == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please fill all fields")));
@@ -124,7 +156,10 @@ class _RegisterComplaintState extends State<RegisterComplaint> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Complaint Registered!"), backgroundColor: Colors.green));
         _descriptionController.clear();
-        setState(() { _selectedCategory = null; _selectedImage = null; });
+        setState(() {
+          _selectedCategory = null;
+          _selectedImage = null;
+        });
       }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red));
@@ -133,11 +168,9 @@ class _RegisterComplaintState extends State<RegisterComplaint> {
     }
   }
 
-  // Helper for safe decoding
   Uint8List? _safeDecode(String? imgStr) {
     if (imgStr == null || imgStr.isEmpty) return null;
     try {
-      // Handles both raw and prefixed Base64 data
       String cleanBase64 = imgStr.contains(',') ? imgStr.split(',')[1] : imgStr;
       return base64Decode(cleanBase64.trim());
     } catch (e) {
@@ -153,10 +186,12 @@ class _RegisterComplaintState extends State<RegisterComplaint> {
       appBar: AppBar(
         title: const Text("Register Complaint", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         backgroundColor: AppStyle.darkTeal,
+        elevation: 0,
       ),
       body: Column(
         children: [
-          if (_isLoading) const LinearProgressIndicator(color: AppStyle.darkTeal),
+          if (_isLoading || _isPdfLoading)
+            const LinearProgressIndicator(color: Colors.orangeAccent),
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(20),
@@ -216,9 +251,11 @@ class _RegisterComplaintState extends State<RegisterComplaint> {
                     children: [
                       const Text("Recent Complaints", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                       ElevatedButton.icon(
-                        onPressed: () {}, // Download logic
-                        icon: const Icon(Icons.picture_as_pdf, size: 16, color: Colors.white),
-                        label: const Text("DOWNLOAD REPORT", style: TextStyle(color: Colors.white, fontSize: 11)),
+                        onPressed: _isPdfLoading ? null : _downloadComplaintReport,
+                        icon: _isPdfLoading
+                            ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                            : const Icon(Icons.picture_as_pdf, size: 16, color: Colors.white),
+                        label: Text(_isPdfLoading ? "GENERATING..." : "DOWNLOAD REPORT", style: const TextStyle(color: Colors.white, fontSize: 11)),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.teal.shade700,
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -261,7 +298,8 @@ class _RegisterComplaintState extends State<RegisterComplaint> {
     return StreamBuilder<QuerySnapshot>(
       stream: _complaintStream,
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: Text("No complaints found."));
+        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return const Padding(padding: EdgeInsets.all(20), child: Center(child: Text("No complaints found.", style: TextStyle(color: Colors.grey))));
 
         final displayDocs = snapshot.data!.docs.take(5).toList();
 

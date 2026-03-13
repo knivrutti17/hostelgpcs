@@ -4,7 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 
 class AdminOverview extends StatelessWidget {
-  const AdminOverview({super.key});
+  final Function(String)? onSectionChange;
+
+  const AdminOverview({super.key, this.onSectionChange});
 
   @override
   Widget build(BuildContext context) {
@@ -13,45 +15,102 @@ class AdminOverview extends StatelessWidget {
         bool isMobile = constraints.maxWidth < 800;
         bool isTablet = constraints.maxWidth >= 800 && constraints.maxWidth < 1200;
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text("Admin Dashboard",
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF1A237E))),
-            const Text("Academic Year 2024-25",
-                style: TextStyle(fontSize: 13, color: Colors.grey)),
-            const SizedBox(height: 25),
+        return SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text("Admin Dashboard",
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF1A237E))),
+              const Text("Academic Year 2025-26",
+                  style: TextStyle(fontSize: 13, color: Colors.grey)),
+              const SizedBox(height: 25),
 
-            Wrap(
-              spacing: 15,
-              runSpacing: 15,
-              children: [
-                _infoCard("Total Students", "950", Icons.groups, Colors.blue, constraints.maxWidth),
-                _infoCard("Vacant Rooms", "120", Icons.meeting_room, Colors.blueAccent, constraints.maxWidth),
-                _infoCard("Active Complaints", "28", Icons.error_outline, Colors.red, constraints.maxWidth),
-                _infoCard("Staff On Duty", "5", Icons.assignment_ind, Colors.purple, constraints.maxWidth),
-                _infoCard("Pending Fees", "₹ 98,500", Icons.account_balance_wallet, Colors.orange, constraints.maxWidth),
-              ],
-            ),
-            const SizedBox(height: 25),
+              // --- TOP STATS ROW (REAL-TIME DATA) ---
+              _buildLiveStatsRow(constraints.maxWidth),
 
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                _quickAction("Add New Student", Icons.person_add, Colors.blue, isMobile, () {}),
-                _quickAction("Manage Rooms", Icons.bed, Colors.indigo, isMobile, () {}),
-                _quickAction("Attendance Setup", Icons.location_on, Colors.deepPurple, isMobile, () {
-                  Navigator.pushNamed(context, '/attendance_setup');
-                }),
-                _quickAction("View Reports", Icons.analytics, Colors.redAccent, isMobile, () {}),
-                _quickAction("Manage Staff", Icons.people, Colors.orange, isMobile, () {}),
-              ],
-            ),
-            const SizedBox(height: 30),
+              const SizedBox(height: 25),
 
-            _buildResponsiveGrid(isMobile, isTablet),
-          ],
+              // --- QUICK ACTIONS ---
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  _quickAction("Add New Student", Icons.person_add, Colors.blue, isMobile, () {
+                    if (onSectionChange != null) onSectionChange!('Student Admission');
+                  }),
+                  _quickAction("Manage Rooms", Icons.bed, Colors.indigo, isMobile, () {
+                    if (onSectionChange != null) onSectionChange!('Room Allocation');
+                  }),
+                  _quickAction("Attendance Setup", Icons.location_on, Colors.deepPurple, isMobile, () {
+                    Navigator.pushNamed(context, '/attendance_setup');
+                  }),
+                  _quickAction("View Reports", Icons.analytics, Colors.redAccent, isMobile, () {}),
+                  _quickAction("Manage Staff", Icons.people, Colors.orange, isMobile, () {
+                    if (onSectionChange != null) onSectionChange!('Staff Management');
+                  }),
+                ],
+              ),
+              const SizedBox(height: 30),
+
+              _buildResponsiveGrid(isMobile, isTablet),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // --- DYNAMIC LIVE STATS LOGIC (FIXED ERRORS HERE) ---
+  Widget _buildLiveStatsRow(double maxWidth) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance.collection('users').snapshots(),
+      builder: (context, userSnap) {
+        return StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance.collection('complaints').where('status', isEqualTo: 'Open').snapshots(),
+          builder: (context, complaintSnap) {
+            return StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance.collection('hostels').snapshots(),
+              builder: (context, hostelSnap) {
+
+                int totalStudents = 0;
+                int totalStaff = 0;
+                if (userSnap.hasData) {
+                  for (var doc in userSnap.data!.docs) {
+                    var data = doc.data() as Map<String, dynamic>;
+                    var role = data['role']?.toString().toLowerCase();
+                    if (role == 'student') totalStudents++;
+                    if (role == 'warden' || role == 'hod') totalStaff++;
+                  }
+                }
+
+                // FIXED: Used 'hostelSnap' correctly and handled 'num' to 'int' conversion
+                int vacantRooms = 0;
+                if (hostelSnap.hasData) {
+                  for (var doc in hostelSnap.data!.docs) {
+                    var data = doc.data() as Map<String, dynamic>;
+                    // Cast to num first, then call toInt() to prevent type errors
+                    vacantRooms += (data['vacantSeats'] as num? ?? 0).toInt();
+                  }
+                }
+
+                int activeComplaints = complaintSnap.hasData ? complaintSnap.data!.docs.length : 0;
+
+                return Wrap(
+                  spacing: 15,
+                  runSpacing: 15,
+                  children: [
+                    _infoCard("Total Students", totalStudents.toString(), Icons.groups, Colors.blue, maxWidth),
+                    _infoCard("Vacant Seats", vacantRooms.toString(), Icons.meeting_room, Colors.blueAccent, maxWidth),
+                    _infoCard("Active Complaints", activeComplaints.toString(), Icons.error_outline, Colors.red, maxWidth),
+                    _infoCard("Staff Count", totalStaff.toString(), Icons.assignment_ind, Colors.purple, maxWidth),
+                    _infoCard("Pending Fees", "₹ 98,500", Icons.account_balance_wallet, Colors.orange, maxWidth),
+                  ],
+                );
+              },
+            );
+          },
         );
       },
     );
@@ -68,18 +127,107 @@ class AdminOverview extends StatelessWidget {
       mainAxisSpacing: 20,
       crossAxisSpacing: 20,
       children: [
-        _buildSectionCard("Pending Complaints", _buildComplaintList()),
-        _buildSectionCard("Hostel Room Overview", _buildRoomPreview()),
+        _buildSectionCard("Recent Complaints", _buildComplaintList()),
         _buildSectionCard("Announcements", _buildAnnouncements()),
-        _buildSectionCard("Fee Collection", _buildFeeChart()),
-        _buildSectionCard("Visitors Today", _buildVisitorList()),
         _buildSectionCard("Attendance Overview", _buildAttendanceGrid()),
+        _buildSectionCard("Hostel Room Overview", _buildRoomPreview()),
+        _buildSectionCard("Fee Collection Status", _buildFeeChart()),
+        _buildSectionCard("Visitors Log", _buildVisitorList()),
       ],
     );
   }
 
+  Widget _buildComplaintList() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance.collection('complaints').orderBy('timestamp', descending: true).limit(3).snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const Center(child: LinearProgressIndicator());
+        var docs = snapshot.data!.docs;
+        if (docs.isEmpty) return const Center(child: Text("No complaints found", style: TextStyle(fontSize: 12, color: Colors.grey)));
+
+        return Column(
+          children: docs.map((doc) {
+            var data = doc.data() as Map<String, dynamic>;
+            return ListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              leading: CircleAvatar(backgroundColor: Colors.red.withOpacity(0.1), radius: 14, child: const Icon(Icons.warning, size: 14, color: Colors.red)),
+              title: Text(data['studentName'] ?? "Anonymous", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              subtitle: Text("Room: ${data['roomNo'] ?? '--'} • ${data['type'] ?? 'Issue'}", style: const TextStyle(fontSize: 11)),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  Widget _buildAnnouncements() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance.collection('notices').orderBy('timestamp', descending: true).limit(2).snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const Center(child: LinearProgressIndicator());
+        var docs = snapshot.data!.docs;
+        if (docs.isEmpty) return const Center(child: Text("No recent announcements", style: TextStyle(fontSize: 12)));
+
+        return Column(
+          children: docs.map((doc) {
+            var data = doc.data() as Map<String, dynamic>;
+            return Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: Colors.blue.withOpacity(0.05), borderRadius: BorderRadius.circular(10)),
+              child: Text(data['title'] ?? "", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500), maxLines: 2, overflow: TextOverflow.ellipsis),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  Widget _buildAttendanceGrid() {
+    String todayDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
+
+    return StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance.collection('users').where('role', isEqualTo: 'student').snapshots(),
+        builder: (context, userSnap) {
+          return StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance.collection('daily_attendance').where('date', isEqualTo: todayDate).snapshots(),
+            builder: (context, attendSnap) {
+              int total = userSnap.hasData ? userSnap.data!.docs.length : 0;
+              int present = attendSnap.hasData ? attendSnap.data!.docs.length : 0;
+              int absent = total - present;
+
+              return Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.gps_fixed, color: Colors.green, size: 14),
+                      const SizedBox(width: 5),
+                      Text("Today: ${DateFormat('dd MMM').format(DateTime.now())}",
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green)),
+                    ],
+                  ),
+                  const SizedBox(height: 15),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _attendMiniStat("Present", present.toString(), Colors.blue),
+                      _attendMiniStat("Absent", absent.toString(), Colors.red),
+                    ],
+                  ),
+                ],
+              );
+            },
+          );
+        }
+    );
+  }
+
   Widget _infoCard(String title, String val, IconData icon, Color color, double screenWidth) {
-    double width = screenWidth > 1200 ? (screenWidth - 160) / 5 : (screenWidth > 800 ? (screenWidth - 100) / 2 : screenWidth - 40);
+    double width = screenWidth > 1200 ? (screenWidth - 380) / 5 : (screenWidth > 800 ? (screenWidth - 100) / 2 : screenWidth - 48);
 
     return Container(
       width: width,
@@ -94,7 +242,7 @@ class AdminOverview extends StatelessWidget {
           CircleAvatar(backgroundColor: color.withOpacity(0.1), radius: 22, child: Icon(icon, color: color, size: 22)),
           const SizedBox(height: 15),
           Text(val, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-          Text(title, style: const TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.w500)),
+          Text(title, style: const TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.w500), textAlign: TextAlign.center),
         ],
       ),
     );
@@ -138,54 +286,13 @@ class AdminOverview extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1A237E))),
-              TextButton(onPressed: () {}, child: const Text("View All >", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold))),
+              TextButton(onPressed: () {}, child: const Text("View All >", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
             ],
           ),
-          const Divider(height: 25),
+          const Divider(height: 20),
           Expanded(child: content),
         ],
       ),
-    );
-  }
-
-  // --- LIVE ATTENDANCE GRID ---
-  Widget _buildAttendanceGrid() {
-    String todayDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    const int totalStudents = 950;
-
-    return StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance.collection('daily_attendance')
-            .where('date', isEqualTo: todayDate) // Efficient filtering
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: LinearProgressIndicator());
-
-          int presentCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
-          int absentCount = totalStudents - presentCount;
-
-          return Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.location_on, color: Colors.green, size: 16),
-                  SizedBox(width: 5),
-                  Text("Geofence Active: 100m",
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green)),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _attendMiniStat("Present", "$presentCount Students", Colors.blue),
-                  _attendMiniStat("Absent", "$absentCount Students", Colors.red),
-                ],
-              ),
-            ],
-          );
-        }
     );
   }
 
@@ -198,10 +305,7 @@ class AdminOverview extends StatelessWidget {
     );
   }
 
-  // Placeholder static methods preserved for UI consistency
-  Widget _buildComplaintList() => const Text("Ajay Mehta - Room B-102 (Critical)");
-  Widget _buildFeeChart() => const Icon(Icons.show_chart, size: 60, color: Colors.green);
-  Widget _buildRoomPreview() => const Icon(Icons.map_outlined, size: 60, color: Colors.blueGrey);
-  Widget _buildVisitorList() => const Text("Ravindra Patil - 11:00 AM");
-  Widget _buildAnnouncements() => const Text("Maintenance inspection on April 25");
+  Widget _buildFeeChart() => const Center(child: Icon(Icons.account_balance_wallet_outlined, size: 40, color: Colors.grey));
+  Widget _buildRoomPreview() => const Center(child: Icon(Icons.map_outlined, size: 40, color: Colors.blueGrey));
+  Widget _buildVisitorList() => const Center(child: Text("Log empty for today", style: TextStyle(fontSize: 11, color: Colors.grey)));
 }

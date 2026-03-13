@@ -7,7 +7,9 @@ import 'warden_complaint_view.dart';
 import 'merit_setup_view.dart';
 import 'leave_approval.dart';
 import 'warden_attendance_override.dart';
-import 'package:gpcs_hostel_portal/screens/warden/warden_profile.dart';
+import 'all_students_view.dart';
+import 'warden_profile.dart';
+import 'mess_menu_management.dart'; // IMPORT YOUR NEW FILE
 import 'package:gpcs_hostel_portal/services/chat_control_service.dart';
 import 'package:gpcs_hostel_portal/screens/mobile/chat/chat_list_screen.dart';
 
@@ -42,7 +44,7 @@ class _WardenDashboardState extends State<WardenDashboard> {
                 _buildScrollableSidebar(),
                 Expanded(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 20),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
                     child: _buildBodyContent(),
                   ),
                 ),
@@ -70,95 +72,212 @@ class _WardenDashboardState extends State<WardenDashboard> {
         return const LeaveApprovalView();
       case 'Hostel Chat':
         return const ChatListScreen();
+      case 'Student Management':
+        return const AllStudentsView();
+    // --- REQUIREMENT: MESS MENU CASE ---
+      case 'Mess Menu':
+        return const MessMenuManagement();
       default:
         return Center(child: Text("Section: $_activeSection Under Development", style: const TextStyle(color: Colors.grey)));
     }
   }
 
   Widget _buildProfessionalOverview() {
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance.collection('users').snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) return const Center(child: LinearProgressIndicator());
+
+          var users = snapshot.data!.docs;
+          int totalStudents = users.where((doc) => doc['role'] == 'student').length;
+
+          Set<String> occupiedRoomSet = users
+              .map((doc) => (doc.data() as Map<String, dynamic>)['roomNo']?.toString() ?? "")
+              .where((room) => room.isNotEmpty)
+              .toSet();
+
+          int totalRooms = 150;
+          int occupiedRooms = occupiedRoomSet.length;
+          int vacantRooms = (totalRooms - occupiedRooms) < 0 ? 0 : (totalRooms - occupiedRooms);
+
+          return SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text("Warden Dashboard", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF1A237E))),
+                const Text("Academic Year 2024 - 25", style: TextStyle(fontSize: 13, color: Colors.grey)),
+                const SizedBox(height: 25),
+
+                Row(
+                  children: [
+                    _infoCard("Total Students", totalStudents.toString(), Icons.groups, Colors.blue, onTap: () {
+                      setState(() => _activeSection = 'Student Management');
+                    }),
+                    _infoCard("Total Rooms", totalRooms.toString(), Icons.meeting_room, Colors.teal),
+                    _infoCard("Occupied Rooms", occupiedRooms.toString(), Icons.bed, Colors.teal),
+                    _infoCard("Vacant Rooms", vacantRooms.toString(), Icons.single_bed, Colors.red),
+                    StreamBuilder<QuerySnapshot>(
+                      stream: FirebaseFirestore.instance.collection('leaves').where('status', isEqualTo: 'Pending').snapshots(),
+                      builder: (context, leaveSnap) {
+                        String count = leaveSnap.hasData ? leaveSnap.data!.docs.length.toString() : "0";
+                        return _infoCard("Pending Leave", count, Icons.mail_outline, Colors.orange, onTap: () {
+                          setState(() => _activeSection = 'Leave Requests');
+                        });
+                      },
+                    ),
+                    _infoCard("Pending Fees", "₹1,32,500", Icons.account_balance_wallet, Colors.brown),
+                  ],
+                ),
+                const SizedBox(height: 25),
+
+                _buildDashboardSection(
+                  "Public Chat & Notice Management",
+                  _buildChatControlPanel(),
+                  onViewAll: () => setState(() => _activeSection = 'Hostel Chat'),
+                ),
+                const SizedBox(height: 25),
+
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                        flex: 2,
+                        child: _buildDashboardSection(
+                          "Attendance Status",
+                          _buildAttendanceModule(),
+                          onViewAll: () => setState(() => _activeSection = 'Attendance Override'),
+                        )
+                    ),
+                    const SizedBox(width: 25),
+                    Expanded(
+                        flex: 3,
+                        child: _buildDashboardSection(
+                          "Notice Board Feed",
+                          _buildLiveNoticeList(),
+                          onViewAll: () => _showAddNoticeDialog(context),
+                        )
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 25),
+
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                        flex: 3,
+                        child: _buildDashboardSection(
+                          "Recent Leave Requests",
+                          _buildLiveLeaveTable(),
+                          onViewAll: () => setState(() => _activeSection = 'Leave Requests'),
+                        )
+                    ),
+                    const SizedBox(width: 25),
+                    Expanded(flex: 2, child: _buildDashboardSection("Recent Complaints", _buildMiniComplaintFeed())),
+                  ],
+                ),
+                const SizedBox(height: 25),
+                _buildDashboardSection("Hostel Layout", _buildLayoutModule()),
+                const SizedBox(height: 30),
+              ],
+            ),
+          );
+        }
+    );
+  }
+
+  Widget _buildMiniComplaintFeed() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('complaints')
+          .orderBy('timestamp', descending: true)
+          .limit(4)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const Center(child: LinearProgressIndicator());
+        var docs = snapshot.data!.docs;
+        if (docs.isEmpty) return const Padding(padding: EdgeInsets.all(10), child: Text("No active complaints."));
+
+        return Column(
+          children: docs.map((doc) {
+            var data = doc.data() as Map<String, dynamic>;
+            DateTime? ts = (data['timestamp'] as Timestamp?)?.toDate();
+            String timeStr = ts != null ? DateFormat('jm').format(ts) : "Just now";
+
+            return _complaintMiniItem(
+                data['studentName'] ?? "Anonymous",
+                data['roomNo'] ?? "--",
+                timeStr
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  Widget _complaintMiniItem(String name, String room, String time) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
         children: [
-          const Text("Warden Dashboard", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF1A237E))),
-          const Text("Academic Year 2024 - 25", style: TextStyle(fontSize: 13, color: Colors.grey)),
-          const SizedBox(height: 25),
-
-          Row(
-            children: [
-              _infoCard("Total Students", "320", Icons.groups, Colors.blue),
-              _infoCard("Total Rooms", "150", Icons.meeting_room, Colors.teal),
-              _infoCard("Occupied Rooms", "132", Icons.bed, Colors.teal),
-              _infoCard("Vacant Rooms", "18", Icons.single_bed, Colors.red),
-              StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance.collection('leaves').where('status', isEqualTo: 'Pending').snapshots(),
-                builder: (context, snapshot) {
-                  String count = snapshot.hasData ? snapshot.data!.docs.length.toString() : "0";
-                  return _infoCard("Pending Leave", count, Icons.mail_outline, Colors.orange);
-                },
-              ),
-              _infoCard("Pending Fees", "₹1,32,500", Icons.account_balance_wallet, Colors.brown),
-            ],
+          CircleAvatar(
+              radius: 18,
+              backgroundColor: Colors.red.withOpacity(0.1),
+              child: const Icon(Icons.warning_amber_rounded, size: 18, color: Colors.red)
           ),
-          const SizedBox(height: 25),
-
-          _buildDashboardSection(
-            "Public Chat & Notice Management",
-            _buildChatControlPanel(),
-            onViewAll: () => setState(() => _activeSection = 'Hostel Chat'),
+          const SizedBox(width: 15),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              Text("Room $room • $time", style: const TextStyle(fontSize: 11, color: Colors.grey)),
+            ]),
           ),
-          const SizedBox(height: 25),
-
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                  flex: 2,
-                  child: _buildDashboardSection(
-                    "Attendance Status",
-                    _buildAttendanceModule(),
-                    onViewAll: () => setState(() => _activeSection = 'Attendance Override'),
-                  )
-              ),
-              const SizedBox(width: 25),
-              Expanded(
-                  flex: 3,
-                  child: _buildDashboardSection(
-                    "Notice Board Feed",
-                    _buildLiveNoticeList(),
-                    // --- UPDATED ACTION: Open Combined Logic Dialog ---
-                    onViewAll: () => _showAddNoticeDialog(context),
-                  )
-              ),
-            ],
-          ),
-          const SizedBox(height: 25),
-
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                  flex: 3,
-                  child: _buildDashboardSection(
-                    "Recent Leave Requests",
-                    _buildLiveLeaveTable(),
-                    onViewAll: () => setState(() => _activeSection = 'Leave Requests'),
-                  )
-              ),
-              const SizedBox(width: 25),
-              Expanded(flex: 2, child: _buildDashboardSection("Complaints", _buildMiniComplaintFeed())),
-            ],
-          ),
-          const SizedBox(height: 25),
-          _buildDashboardSection("Hostel Layout", _buildLayoutModule()),
-          const SizedBox(height: 30),
         ],
       ),
     );
   }
 
-  // --- REQUIREMENT: DUAL-SYNC LOGIC (DASHBOARD + CHAT) ---
+  Widget _buildAttendanceModule() {
+    return StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance.collection('users').where('role', isEqualTo: 'student').snapshots(),
+        builder: (context, snapshot) {
+          double percentage = 0.0;
+          if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
+            int total = snapshot.data!.docs.length;
+            int present = snapshot.data!.docs.where((d) => (d.data() as Map<String, dynamic>)['status'] == 'Active').length;
+            percentage = (present / total) * 100;
+          }
+
+          return Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text("${percentage.toStringAsFixed(0)}%",
+                      style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.green)),
+                  const SizedBox(width: 10),
+                  const Text("Active\nToday", style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              const SizedBox(height: 15),
+              const Text("Manual override for GPS issues?", style: TextStyle(fontSize: 12, color: Colors.grey)),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => setState(() => _activeSection = 'Attendance Override'),
+                  icon: const Icon(Icons.fact_check_outlined, size: 18, color: Colors.white),
+                  label: const Text("MANUAL OVERRIDE", style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, padding: const EdgeInsets.symmetric(vertical: 12)),
+                ),
+              ),
+            ],
+          );
+        }
+    );
+  }
+
   void _showAddNoticeDialog(BuildContext context) {
     final TextEditingController _noticeController = TextEditingController();
 
@@ -211,15 +330,12 @@ class _WardenDashboardState extends State<WardenDashboard> {
             onPressed: () async {
               String text = _noticeController.text.trim();
               if (text.isNotEmpty) {
-
-                // 1. Update 'notices' collection (For Student Home Updates)
                 await FirebaseFirestore.instance.collection('notices').add({
                   'title': text,
                   'timestamp': FieldValue.serverTimestamp(),
                   'author': 'Warden Office',
                 });
 
-                // 2. Update 'notice_channel' (For Chat Room Bubble)
                 await FirebaseFirestore.instance
                     .collection('chats')
                     .doc('notice_channel')
@@ -235,7 +351,6 @@ class _WardenDashboardState extends State<WardenDashboard> {
                   'isPinned': true,
                 });
 
-                // 3. Update Last Message in chat list
                 await FirebaseFirestore.instance.collection('chats').doc('notice_channel').update({
                   'lastMessage': text,
                   'lastTimestamp': FieldValue.serverTimestamp(),
@@ -245,10 +360,7 @@ class _WardenDashboardState extends State<WardenDashboard> {
                 if (mounted) {
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text("Broadcast sent to Dashboard and Chat Room!"),
-                      backgroundColor: Colors.green,
-                    ),
+                    const SnackBar(content: Text("Broadcast sent successfully!"), backgroundColor: Colors.green),
                   );
                 }
               }
@@ -256,6 +368,32 @@ class _WardenDashboardState extends State<WardenDashboard> {
             child: const Text("Publish Broadcast", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _infoCard(String title, String val, IconData icon, Color color, {VoidCallback? onTap}) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(15),
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 5),
+          padding: const EdgeInsets.symmetric(vertical: 20),
+          decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(15),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))]
+          ),
+          child: Column(
+            children: [
+              CircleAvatar(backgroundColor: color.withOpacity(0.1), radius: 22, child: Icon(icon, color: color, size: 22)),
+              const SizedBox(height: 12),
+              Text(val, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              Text(title, style: const TextStyle(color: Colors.grey, fontSize: 10, fontWeight: FontWeight.bold)),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -306,17 +444,10 @@ class _WardenDashboardState extends State<WardenDashboard> {
   Widget _buildControlTile({required String title, required String subtitle, required IconData icon, required Color iconColor, required Widget trailing}) {
     return Container(
       padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE0E0E0)),
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFE0E0E0))),
       child: Row(
         children: [
-          CircleAvatar(
-            backgroundColor: iconColor.withOpacity(0.1),
-            child: Icon(icon, color: iconColor, size: 20),
-          ),
+          CircleAvatar(backgroundColor: iconColor.withOpacity(0.1), child: Icon(icon, color: iconColor, size: 20)),
           const SizedBox(width: 15),
           Expanded(
             child: Column(
@@ -339,10 +470,7 @@ class _WardenDashboardState extends State<WardenDashboard> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text("Update Pinned Message"),
-        content: TextField(
-          controller: pinController,
-          decoration: const InputDecoration(hintText: "Enter new announcement text..."),
-        ),
+        content: TextField(controller: pinController, decoration: const InputDecoration(hintText: "Enter new announcement text...")),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
           ElevatedButton(
@@ -386,10 +514,7 @@ class _WardenDashboardState extends State<WardenDashboard> {
 
   Widget _buildLiveLeaveTable() {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('leaves')
-          .where('status', isEqualTo: 'Pending')
-          .limit(3)
-          .snapshots(),
+      stream: FirebaseFirestore.instance.collection('leaves').where('status', isEqualTo: 'Pending').limit(3).snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Center(child: LinearProgressIndicator());
         if (snapshot.data!.docs.isEmpty) return const Padding(padding: EdgeInsets.symmetric(vertical: 20), child: Text("No pending leaves."));
@@ -424,48 +549,15 @@ class _WardenDashboardState extends State<WardenDashboard> {
     ]);
   }
 
-  Widget _buildAttendanceModule() {
+  Widget _buildLayoutModule() {
     return Column(
       children: [
-        const Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text("85%", style: TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.green)),
-            SizedBox(width: 10),
-            Text("Present\nToday", style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        const SizedBox(height: 15),
-        const Text("Manual override for GPS issues?", style: TextStyle(fontSize: 12, color: Colors.grey)),
+        const Icon(Icons.map_outlined, size: 40, color: Colors.blueGrey),
         const SizedBox(height: 10),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: () => setState(() => _activeSection = 'Attendance Override'),
-            icon: const Icon(Icons.fact_check_outlined, size: 18, color: Colors.white),
-            label: const Text("MANUAL OVERRIDE", style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, padding: const EdgeInsets.symmetric(vertical: 12)),
-          ),
-        ),
+        const Text("Hostel occupancy management", style: TextStyle(fontSize: 12, color: Colors.grey)),
+        const SizedBox(height: 15),
+        SizedBox(width: double.infinity, child: ElevatedButton(onPressed: () {}, style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryBlue), child: const Text("View Layout", style: TextStyle(color: Colors.white)))),
       ],
-    );
-  }
-
-  Widget _infoCard(String title, String val, IconData icon, Color color) {
-    return Expanded(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 5),
-        padding: const EdgeInsets.symmetric(vertical: 20),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))]),
-        child: Column(
-          children: [
-            CircleAvatar(backgroundColor: color.withOpacity(0.1), radius: 22, child: Icon(icon, color: color, size: 22)),
-            const SizedBox(height: 12),
-            Text(val, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            Text(title, style: const TextStyle(color: Colors.grey, fontSize: 10, fontWeight: FontWeight.bold)),
-          ],
-        ),
-      ),
     );
   }
 
@@ -493,45 +585,6 @@ class _WardenDashboardState extends State<WardenDashboard> {
     );
   }
 
-  Widget _buildMiniComplaintFeed() {
-    return Column(
-      children: [
-        _complaintMiniItem("Riya Sharma", "B-212", "23 min ago"),
-        _complaintMiniItem("Rahul Mishra", "A-103", "45 min ago"),
-      ],
-    );
-  }
-
-  Widget _complaintMiniItem(String name, String room, String time) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          const CircleAvatar(radius: 18, child: Icon(Icons.person, size: 18)),
-          const SizedBox(width: 15),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-              Text("Room $room", style: const TextStyle(fontSize: 11, color: Colors.grey)),
-            ]),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLayoutModule() {
-    return Column(
-      children: [
-        const Icon(Icons.map_outlined, size: 40, color: Colors.blueGrey),
-        const SizedBox(height: 10),
-        const Text("Hostel occupancy management", style: TextStyle(fontSize: 12, color: Colors.grey)),
-        const SizedBox(height: 15),
-        SizedBox(width: double.infinity, child: ElevatedButton(onPressed: () {}, style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryBlue), child: const Text("View Layout", style: TextStyle(color: Colors.white)))),
-      ],
-    );
-  }
-
   Widget _buildScrollableSidebar() {
     return Container(
       width: 280,
@@ -548,7 +601,10 @@ class _WardenDashboardState extends State<WardenDashboard> {
           _sidebarTitle(" Leave & Attendance"),
           _sidebarItem("Leave Requests", Icons.time_to_leave_outlined),
           _sidebarItem("Attendance Override", Icons.fact_check_outlined),
+          _sidebarTitle(" Services"), // NEW SECTION
+          _sidebarItem("Mess Menu", Icons.restaurant_menu_outlined), // NEW ITEM
           _sidebarTitle(" Student Management"),
+          _sidebarItem("Student Management", Icons.person_search_outlined),
           _sidebarItem("Student Admission", Icons.person_add_outlined),
           _sidebarItem("Room Allocation", Icons.bed_outlined),
         ],
