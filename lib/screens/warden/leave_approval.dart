@@ -8,7 +8,14 @@ import 'package:http/http.dart' as http;
 import 'dart:typed_data'; // <--- ADD THIS LINE TO FIX THE ERROR
 
 class LeaveApprovalView extends StatefulWidget {
-  const LeaveApprovalView({super.key});
+  const LeaveApprovalView({
+    super.key,
+    this.branchFilter,
+    this.showAppBar = true,
+  });
+
+  final String? branchFilter;
+  final bool showAppBar;
 
   @override
   State<LeaveApprovalView> createState() => _LeaveApprovalViewState();
@@ -27,6 +34,67 @@ class _LeaveApprovalViewState extends State<LeaveApprovalView> with SingleTicker
 
   @override
   Widget build(BuildContext context) {
+    final body = Stack(
+      children: [
+        Column(
+          children: [
+            if (!widget.showAppBar)
+              Container(
+                color: Colors.white,
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                child: TabBar(
+                  controller: _tabController,
+                  indicatorColor: portalBlue,
+                  indicatorWeight: 3,
+                  labelColor: portalBlue,
+                  unselectedLabelColor: Colors.grey,
+                  labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+                  tabs: const [
+                    Tab(text: "PENDING REQUESTS"),
+                    Tab(text: "ACTION HISTORY"),
+                  ],
+                ),
+              ),
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildLeaveList('Pending'),
+                  _buildHistoryPanel(),
+                ],
+              ),
+            ),
+          ],
+        ),
+        if (_isGeneratingPdf)
+          Container(
+            color: Colors.black26,
+            child: const Center(
+              child: Card(
+                child: Padding(
+                  padding: EdgeInsets.all(20.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 15),
+                      Text("Preparing Official PDF...", style: TextStyle(fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+
+    if (!widget.showAppBar) {
+      return ColoredBox(
+        color: const Color(0xFFF3F6FF),
+        child: body,
+      );
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF3F6FF),
       appBar: PreferredSize(
@@ -49,58 +117,22 @@ class _LeaveApprovalViewState extends State<LeaveApprovalView> with SingleTicker
           ),
         ),
       ),
-      body: Stack(
-        children: [
-          TabBarView(
-            controller: _tabController,
-            children: [
-              _buildLeaveList('Pending'),
-              _buildHistoryPanel(),
-            ],
-          ),
-          if (_isGeneratingPdf)
-            Container(
-              color: Colors.black26,
-              child: const Center(
-                child: Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(20.0),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CircularProgressIndicator(),
-                        SizedBox(height: 15),
-                        Text("Preparing Official PDF...", style: TextStyle(fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
+      body: body,
     );
   }
 
   Widget _buildLeaveList(String status) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('leaves')
-          .where('status', isEqualTo: status)
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        var docs = snapshot.data!.docs;
-        if (docs.isEmpty) return _emptyState("No $status requests found");
-
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: docs.length,
-          itemBuilder: (context, index) {
-            var data = docs[index].data() as Map<String, dynamic>;
-            return _buildRequestCard(docs[index].id, data);
-          },
-        );
-      },
+    return _buildFilteredLeaveStream(
+      stream: _leaveStreamForStatus(status).snapshots(),
+      emptyMessage: "No $status requests found",
+      builder: (docs) => ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: docs.length,
+        itemBuilder: (context, index) {
+          var data = docs[index].data() as Map<String, dynamic>;
+          return _buildRequestCard(docs[index].id, data);
+        },
+      ),
     );
   }
 
@@ -124,23 +156,17 @@ class _LeaveApprovalViewState extends State<LeaveApprovalView> with SingleTicker
           ),
         ),
         Expanded(
-          child: StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance.collection('leaves')
-                .where('status', whereIn: ['Approved', 'Rejected'])
-                .snapshots(),
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-              var docs = snapshot.data!.docs;
-              if (docs.isEmpty) return _emptyState("No history available");
-              return ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: docs.length,
-                itemBuilder: (context, index) {
-                  var data = docs[index].data() as Map<String, dynamic>;
-                  return _buildRequestCard(docs[index].id, data, isHistory: true);
-                },
-              );
-            },
+          child: _buildFilteredLeaveStream(
+            stream: _historyStream().snapshots(),
+            emptyMessage: "No history available",
+            builder: (docs) => ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: docs.length,
+              itemBuilder: (context, index) {
+                var data = docs[index].data() as Map<String, dynamic>;
+                return _buildRequestCard(docs[index].id, data, isHistory: true);
+              },
+            ),
           ),
         ),
       ],
@@ -260,8 +286,8 @@ class _LeaveApprovalViewState extends State<LeaveApprovalView> with SingleTicker
     try {
       final pdf = pw.Document();
 
-      final historySnap = await FirebaseFirestore.instance.collection('leaves')
-          .where('status', whereIn: ['Approved', 'Rejected']).get();
+      final historySnap = await _historyStream().get();
+      final filteredDocs = await _filterDocsForBranch(historySnap.docs);
 
       Uint8List? logoBytes;
       try {
@@ -303,7 +329,7 @@ class _LeaveApprovalViewState extends State<LeaveApprovalView> with SingleTicker
             cellStyle: const pw.TextStyle(fontSize: 9),
             cellHeight: 25,
             headers: ['Student Name', 'Room', 'Status', 'Start Date', 'End Date'],
-            data: historySnap.docs.map((doc) {
+            data: filteredDocs.map((doc) {
               var d = doc.data() as Map<String, dynamic>;
               return [
                 d['studentName'] ?? "N/A",
@@ -345,5 +371,108 @@ class _LeaveApprovalViewState extends State<LeaveApprovalView> with SingleTicker
         setState(() => _isGeneratingPdf = false);
       }
     }
+  }
+
+  Query<Map<String, dynamic>> _leaveBaseQuery() {
+    return FirebaseFirestore.instance.collection('leaves');
+  }
+
+  Query<Map<String, dynamic>> _leaveStreamForStatus(String status) {
+    return _leaveBaseQuery().where('status', isEqualTo: status);
+  }
+
+  Query<Map<String, dynamic>> _historyStream() {
+    return _leaveBaseQuery().where('status', whereIn: ['Approved', 'Rejected']);
+  }
+
+  Widget _buildFilteredLeaveStream({
+    required Stream<QuerySnapshot> stream,
+    required String emptyMessage,
+    required Widget Function(List<QueryDocumentSnapshot> docs) builder,
+  }) {
+    if (widget.branchFilter == null) {
+      return StreamBuilder<QuerySnapshot>(
+        stream: stream,
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          var docs = snapshot.data!.docs;
+          if (docs.isEmpty) {
+            return _emptyState(emptyMessage);
+          }
+          return builder(docs);
+        },
+      );
+    }
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .snapshots(),
+      builder: (context, userSnapshot) {
+        if (!userSnapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final allowedIds = userSnapshot.data!.docs.where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          final role = (data['role'] ?? '').toString().toLowerCase();
+          final branch = (data['branch'] ?? data['brach'] ?? '')
+              .toString()
+              .trim();
+          return role == 'student' && branch == widget.branchFilter;
+        }).map((doc) => doc.id).toSet();
+
+        return StreamBuilder<QuerySnapshot>(
+          stream: stream,
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final docs = snapshot.data!.docs.where((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              final studentId =
+                  (data['studentUid'] ?? data['uid'] ?? data['rollNo'])
+                      .toString();
+              return allowedIds.contains(studentId);
+            }).toList();
+
+            if (docs.isEmpty) {
+              return _emptyState(emptyMessage);
+            }
+
+            return builder(docs);
+          },
+        );
+      },
+    );
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _filterDocsForBranch(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) async {
+    if (widget.branchFilter == null) {
+      return docs;
+    }
+
+    final usersSnap = await FirebaseFirestore.instance
+        .collection('users')
+        .get();
+    final allowedIds = usersSnap.docs.where((doc) {
+      final data = doc.data();
+      final role = (data['role'] ?? '').toString().toLowerCase();
+      final branch =
+          (data['branch'] ?? data['brach'] ?? '').toString().trim();
+      return role == 'student' && branch == widget.branchFilter;
+    }).map((doc) => doc.id).toSet();
+
+    return docs.where((doc) {
+      final data = doc.data();
+      final studentId =
+          (data['studentUid'] ?? data['uid'] ?? data['rollNo']).toString();
+      return allowedIds.contains(studentId);
+    }).toList();
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:gpcs_hostel_portal/widgets.dart';
 import 'package:gpcs_hostel_portal/styles.dart';
 import 'package:gpcs_hostel_portal/screens/admin/views/admin_overview.dart';
+import 'views/admin_attendance_screen.dart';
 import 'package:gpcs_hostel_portal/screens/admin/views/merit_setup.dart';
 import 'package:gpcs_hostel_portal/screens/admin/views/user_logs.dart';
 import 'package:gpcs_hostel_portal/screens/admin/views/staff_management.dart';
@@ -29,6 +30,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     "Logs": 3,
     "EmergencyContacts": 4,
     "EmergencyBlood": 5,
+    "Attendance": 6,
   };
 
   @override
@@ -67,6 +69,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         UserLogsView(),
                         const ManageContacts(),
                         const BloodDonorList(),
+                        const AdminAttendanceScreen(),
                       ],
                     ),
                   ),
@@ -99,6 +102,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
                   _sectionHeader("REPORTS"),
                   _sidebarItem("User Logs", Icons.history, 3),
+                  _sidebarItem("Attendance Dashboard", Icons.fact_check_outlined, 6),
 
                   _sectionHeader("EMERGENCY CONTROL"),
                   _sidebarItem("Emergency Contacts", Icons.contact_phone, 4),

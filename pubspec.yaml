@@ -21,6 +21,7 @@ dependencies:
 
   # Location (Attendance GPS)
   geolocator: ^13.0.1
+  local_auth: ^3.0.1
 
   # Session Management (Persistent Login)
   shared_preferences: ^2.3.5

@@ -3,7 +3,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../styles.dart';
 
 class HODComplaintView extends StatelessWidget {
-  const HODComplaintView({super.key});
+  const HODComplaintView({
+    super.key,
+    this.branchFilter = 'Information technology',
+  });
+
+  final String branchFilter;
 
   @override
   Widget build(BuildContext context) {
@@ -18,38 +23,72 @@ class HODComplaintView extends StatelessWidget {
           child: StreamBuilder<QuerySnapshot>(
             // Stream strictly filtered for HOD role
             stream: FirebaseFirestore.instance
-                .collection('complaints')
-                .where('sendTo', isEqualTo: 'HOD')
+                .collection('users')
                 .snapshots(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-
-              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                return const Center(child: Text("No Pending Complaints for IT Department.", style: TextStyle(color: Colors.grey)));
+            builder: (context, userSnapshot) {
+              if (userSnapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
               }
 
-              return ListView.builder(
-                itemCount: snapshot.data!.docs.length,
-                itemBuilder: (context, index) {
-                  var doc = snapshot.data!.docs[index];
-                  var data = doc.data() as Map<String, dynamic>;
-                  return Card(
-                    elevation: 2,
-                    margin: const EdgeInsets.only(bottom: 12),
-                    child: ListTile(
-                      onTap: () => _showStatusDialog(context, doc.id),
-                      leading: const CircleAvatar(
-                          backgroundColor: Color(0xFFF3E5F5),
-                          child: Icon(Icons.mail, color: Colors.purple)
+              final allowedIds = (userSnapshot.data?.docs ?? []).where((doc) {
+                final data = doc.data() as Map<String, dynamic>;
+                final role = (data['role'] ?? '').toString().toLowerCase();
+                final branch =
+                    (data['branch'] ?? data['brach'] ?? '').toString().trim();
+                return role == 'student' && branch == branchFilter;
+              }).map((doc) => doc.id).toSet();
+
+              return StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('complaints')
+                    .where('sendTo', isEqualTo: 'HOD')
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  final docs = (snapshot.data?.docs ?? []).where((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    final studentId =
+                        (data['studentUid'] ?? data['uid'] ?? data['rollNo'])
+                            .toString();
+                    return allowedIds.contains(studentId);
+                  }).toList();
+
+                  if (docs.isEmpty) {
+                    return const Center(
+                      child: Text(
+                        "No Pending Complaints for IT Department.",
+                        style: TextStyle(color: Colors.grey),
                       ),
-                      title: Text(
-                          "${data['studentName'] ?? 'Unknown'} (${data['rollNo'] ?? '---'})",
-                          style: const TextStyle(fontWeight: FontWeight.bold)
-                      ),
-                      subtitle: Text("Category: ${data['category'] ?? 'General'}\nDescription: ${data['description'] ?? ''}"),
-                      trailing: _buildUrgencyBadge(data['urgency'] ?? "Low", data['status'] ?? "Pending"),
-                      isThreeLine: true,
-                    ),
+                    );
+                  }
+
+                  return ListView.builder(
+                    itemCount: docs.length,
+                    itemBuilder: (context, index) {
+                      var doc = docs[index];
+                      var data = doc.data() as Map<String, dynamic>;
+                      return Card(
+                        elevation: 2,
+                        margin: const EdgeInsets.only(bottom: 12),
+                        child: ListTile(
+                          onTap: () => _showStatusDialog(context, doc.id),
+                          leading: const CircleAvatar(
+                              backgroundColor: Color(0xFFF3E5F5),
+                              child: Icon(Icons.mail, color: Colors.purple)
+                          ),
+                          title: Text(
+                              "${data['studentName'] ?? 'Unknown'} (${data['rollNo'] ?? '---'})",
+                              style: const TextStyle(fontWeight: FontWeight.bold)
+                          ),
+                          subtitle: Text("Category: ${data['category'] ?? 'General'}\nDescription: ${data['description'] ?? ''}"),
+                          trailing: _buildUrgencyBadge(data['urgency'] ?? "Low", data['status'] ?? "Pending"),
+                          isThreeLine: true,
+                        ),
+                      );
+                    },
                   );
                 },
               );

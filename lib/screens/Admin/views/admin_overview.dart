@@ -105,7 +105,7 @@ class AdminOverview extends StatelessWidget {
                     _infoCard("Vacant Seats", vacantRooms.toString(), Icons.meeting_room, Colors.blueAccent, maxWidth),
                     _infoCard("Active Complaints", activeComplaints.toString(), Icons.error_outline, Colors.red, maxWidth),
                     _infoCard("Staff Count", totalStaff.toString(), Icons.assignment_ind, Colors.purple, maxWidth),
-                    _infoCard("Pending Fees", "₹ 98,500", Icons.account_balance_wallet, Colors.orange, maxWidth),
+                    _infoCard("Pending Fees", "₹ 1800", Icons.account_balance_wallet, Colors.orange, maxWidth),
                   ],
                 );
               },

@@ -106,7 +106,7 @@ class _WardenDashboardState extends State<WardenDashboard> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text("Warden Dashboard", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF1A237E))),
-                const Text("Academic Year 2024 - 25", style: TextStyle(fontSize: 13, color: Colors.grey)),
+                const Text("Academic Year 2025 - 26", style: TextStyle(fontSize: 13, color: Colors.grey)),
                 const SizedBox(height: 25),
 
                 Row(
@@ -126,7 +126,7 @@ class _WardenDashboardState extends State<WardenDashboard> {
                         });
                       },
                     ),
-                    _infoCard("Pending Fees", "₹1,32,500", Icons.account_balance_wallet, Colors.brown),
+                    _infoCard("Pending Fees", "₹1800", Icons.account_balance_wallet, Colors.brown),
                   ],
                 ),
                 const SizedBox(height: 25),
