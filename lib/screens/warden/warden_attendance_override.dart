@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:gpcs_hostel_portal/services/attendance_validation_service.dart';
 import 'package:intl/intl.dart';
 
 class WardenAttendanceOverride extends StatefulWidget {
@@ -15,7 +16,10 @@ class WardenAttendanceOverride extends StatefulWidget {
 class _WardenAttendanceOverrideState extends State<WardenAttendanceOverride> {
   // Step A: Define the Search Controller and Query String
   final TextEditingController _searchController = TextEditingController();
+  final AttendanceValidationService _attendanceValidationService =
+      AttendanceValidationService();
   String _searchQuery = "";
+  String _selectedSlot = 'Morning Session';
 
   @override
   void dispose() {
@@ -52,6 +56,47 @@ class _WardenAttendanceOverrideState extends State<WardenAttendanceOverride> {
                   _searchQuery = value.toLowerCase();
                 });
               },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment<String>(
+                    value: 'Morning Session',
+                    label: Text('Morning Session'),
+                    icon: Icon(Icons.wb_sunny_outlined),
+                  ),
+                  ButtonSegment<String>(
+                    value: 'Night Session',
+                    label: Text('Night Session'),
+                    icon: Icon(Icons.nights_stay_outlined),
+                  ),
+                ],
+                selected: {_selectedSlot},
+                style: ButtonStyle(
+                  foregroundColor: WidgetStateProperty.resolveWith(
+                    (states) => states.contains(WidgetState.selected)
+                        ? Colors.white
+                        : const Color(0xFF0077C2),
+                  ),
+                  backgroundColor: WidgetStateProperty.resolveWith(
+                    (states) => states.contains(WidgetState.selected)
+                        ? const Color(0xFF0077C2)
+                        : Colors.white,
+                  ),
+                  side: WidgetStateProperty.all(
+                    BorderSide(
+                      color: const Color(0xFF0077C2).withValues(alpha: 0.22),
+                    ),
+                  ),
+                ),
+                onSelectionChanged: (selection) {
+                  setState(() => _selectedSlot = selection.first);
+                },
+              ),
             ),
           ),
 
@@ -141,17 +186,42 @@ class _WardenAttendanceOverrideState extends State<WardenAttendanceOverride> {
   }
 
   void _markAttendanceManually(String studentId, String studentName) async {
-    String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final sessionBase =
+        _selectedSlot == 'Morning Session' ? 'Morning' : 'Night';
+    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
     try {
+      final validationResult =
+          await _attendanceValidationService.validateMarking(
+        studentUid: studentId,
+        intendedSession: sessionBase,
+      );
+
+      if (validationResult['isValid'] != true) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(
+              SnackBar(
+                content: Text(
+                  (validationResult['message'] ?? 'Unable to mark attendance')
+                      .toString(),
+                ),
+                backgroundColor: Colors.red,
+              ),
+            );
+        }
+        return;
+      }
+
       await FirebaseFirestore.instance
           .collection('daily_attendance')
-          .doc("${today}_$studentId")
+          .doc("${today}_${studentId}_${sessionBase.toLowerCase()}")
           .set({
         'studentUid': studentId,
         'studentName': studentName,
         'status': 'Present',
-        'slot': 'Manual',
+        'slot': sessionBase == 'Morning' ? 'Manual Morning' : 'Manual Night',
         'markedBy': 'warden',
         'timestamp': FieldValue.serverTimestamp(),
         'date': today,

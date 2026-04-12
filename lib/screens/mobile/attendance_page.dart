@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:gpcs_hostel_portal/services/attendance_validation_service.dart';
 import 'package:intl/intl.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -13,24 +14,10 @@ class AttendancePage extends StatefulWidget {
 
 class _AttendancePageState extends State<AttendancePage> {
   final LocalAuthentication _localAuth = LocalAuthentication();
+  final AttendanceValidationService _attendanceValidationService =
+      AttendanceValidationService();
   bool _isLoading = false;
   String _loadingMessage = "";
-
-  // Helper to convert DB strings to comparable values
-  bool _isWithinTimeRange(String startStr, String endStr, DateTime now) {
-    try {
-      final DateFormat format = DateFormat("H:m");
-      DateTime start = format.parse(startStr);
-      DateTime end = format.parse(endStr);
-
-      DateTime startToday = DateTime(now.year, now.month, now.day, start.hour, start.minute);
-      DateTime endToday = DateTime(now.year, now.month, now.day, end.hour, end.minute);
-
-      return now.isAfter(startToday) && now.isBefore(endToday);
-    } catch (e) {
-      return false;
-    }
-  }
 
   String _formatError(Object error) {
     if (error is LocalAuthException) {
@@ -91,8 +78,13 @@ class _AttendancePageState extends State<AttendancePage> {
         title: const Row(
           children: [
             Icon(Icons.verified, color: Color(0xFF00897B)),
-            SizedBox(width: 10),
-            Text('Attendance Marked'),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Attendance Marked',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
         content: Text(
@@ -111,6 +103,45 @@ class _AttendancePageState extends State<AttendancePage> {
     );
   }
 
+  String _resolveStudentSessionBase(
+    Map<String, dynamic> configData,
+    Map<String, dynamic> activeSlotResult,
+  ) {
+    final activeSlot = (activeSlotResult['slot'] ?? '').toString();
+    if (activeSlot == 'Morning' || activeSlot == 'Night') {
+      return activeSlot;
+    }
+
+    final now = DateTime.now();
+    final nightStart = _parseTimeForToday(
+      configData['night_start']?.toString(),
+      now,
+    );
+
+    if (nightStart != null && !now.isBefore(nightStart)) {
+      return 'Night';
+    }
+
+    return 'Morning';
+  }
+
+  DateTime? _parseTimeForToday(String? time, DateTime now) {
+    if (time == null || time.trim().isEmpty) return null;
+
+    try {
+      final parsed = DateFormat('H:m').parseStrict(time.trim());
+      return DateTime(
+        now.year,
+        now.month,
+        now.day,
+        parsed.hour,
+        parsed.minute,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _markAttendance() async {
     if (_isLoading) return;
 
@@ -125,44 +156,31 @@ class _AttendancePageState extends State<AttendancePage> {
 
       if (rollNo == null) throw "Session expired. Please log in again.";
 
-      var config = await FirebaseFirestore.instance.collection('attendance_config').doc('settings').get();
+      final config = await FirebaseFirestore.instance
+          .collection('attendance_config')
+          .doc('settings')
+          .get();
       if (!config.exists) throw "Attendance configuration not found.";
 
-      bool isAnytimeAllowed = config.data()?['allowAnytime'] ?? false;
-      final double hostelLatitude = (config.data()?['latitude'] ?? 0.0).toDouble();
-      final double hostelLongitude = (config.data()?['longitude'] ?? 0.0).toDouble();
+      final configData = config.data() ?? <String, dynamic>{};
+      final double hostelLatitude = (configData['latitude'] ?? 0.0).toDouble();
+      final double hostelLongitude =
+          (configData['longitude'] ?? 0.0).toDouble();
       final double radius = (config.data()?['radius'] ?? 100.0).toDouble();
 
-      DateTime now = DateTime.now();
-      String today = DateFormat('yyyy-MM-dd').format(now);
-      String slot = "";
+      final activeSlotResult =
+          await _attendanceValidationService.getActiveTimeSlot();
+      final intendedSession =
+          _resolveStudentSessionBase(configData, activeSlotResult);
+      final validationResult =
+          await _attendanceValidationService.validateMarking(
+        studentUid: rollNo,
+        intendedSession: intendedSession,
+      );
 
-      if (isAnytimeAllowed) {
-        slot = "Manual";
-      } else {
-        String morningS = config.data()?['morning_start'] ?? "10:0";
-        String morningE = config.data()?['morning_end'] ?? "16:0";
-        String nightS = config.data()?['night_start'] ?? "20:0";
-        String nightE = config.data()?['night_end'] ?? "21:0";
-
-        if (_isWithinTimeRange(morningS, morningE, now)) {
-          slot = "Morning";
-        } else if (_isWithinTimeRange(nightS, nightE, now)) {
-          slot = "Night";
-        } else {
-          throw "Attendance is closed. Windows: $morningS-$morningE or $nightS-$nightE";
-        }
-      }
-
-      var existingRecord = await FirebaseFirestore.instance
-          .collection('daily_attendance')
-          .where('studentUid', isEqualTo: rollNo)
-          .where('date', isEqualTo: today)
-          .where('slot', isEqualTo: slot)
-          .get();
-
-      if (existingRecord.docs.isNotEmpty) {
-        throw "You already marked $slot attendance for today.";
+      if (validationResult['isValid'] != true) {
+        throw (validationResult['message'] ?? 'Unable to mark attendance')
+            .toString();
       }
 
       setState(() {
@@ -222,9 +240,9 @@ class _AttendancePageState extends State<AttendancePage> {
         'studentUid': rollNo,
         'status': 'Present',
         'verifiedBy': 'Biometric',
-        'slot': slot,
+        'slot': intendedSession,
         'timestamp': FieldValue.serverTimestamp(),
-        'date': today,
+        'date': DateFormat('yyyy-MM-dd').format(DateTime.now()),
       });
 
       if (!mounted) return;
@@ -234,7 +252,7 @@ class _AttendancePageState extends State<AttendancePage> {
         _loadingMessage = "";
       });
 
-      await _showSuccessDialog(slot);
+      await _showSuccessDialog(intendedSession);
 
       if (mounted) {
         Navigator.pop(context);
