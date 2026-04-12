@@ -26,11 +26,12 @@ class ChatListScreen extends StatelessWidget {
           backgroundColor: const Color(0xFFF9FAFB),
           appBar: AppBar(
             elevation: 0,
-            backgroundColor: const Color(0xFF438A7F),
+            backgroundColor: const Color(0xFF0077C2),
             iconTheme: const IconThemeData(color: Colors.white),
             title: Text(
               isStaff ? "Staff Chat Management" : "Hostel Chat",
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                  color: Colors.white, fontWeight: FontWeight.bold),
             ),
             actions: [
               IconButton(
@@ -63,10 +64,10 @@ class ChatListScreen extends StatelessWidget {
           ),
           floatingActionButton: isStaff
               ? FloatingActionButton(
-            onPressed: () {},
-            backgroundColor: const Color(0xFF438A7F),
-            child: const Icon(Icons.add, color: Colors.white),
-          )
+                  onPressed: () {},
+                  backgroundColor: const Color(0xFF438A7F),
+                  child: const Icon(Icons.add, color: Colors.white),
+                )
               : null,
         );
       },
@@ -84,7 +85,8 @@ class ChatListScreen extends StatelessWidget {
         if (myRoom == null) {
           return const Padding(
             padding: EdgeInsets.all(8.0),
-            child: Text("No room assigned", style: TextStyle(color: Colors.grey)),
+            child:
+                Text("No room assigned", style: TextStyle(color: Colors.grey)),
           );
         }
 
@@ -99,7 +101,8 @@ class ChatListScreen extends StatelessWidget {
             if (chatSnapshot.data!.docs.isEmpty) {
               return const Padding(
                 padding: EdgeInsets.all(8.0),
-                child: Text("Your room chat is not active.", style: TextStyle(color: Colors.grey)),
+                child: Text("Your room chat is not active.",
+                    style: TextStyle(color: Colors.grey)),
               );
             }
 
@@ -119,7 +122,10 @@ class ChatListScreen extends StatelessWidget {
       padding: const EdgeInsets.only(left: 4, bottom: 12),
       child: Text(
         title,
-        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF438A7F)),
+        style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF438A7F)),
       ),
     );
   }
@@ -143,7 +149,8 @@ class ChatListScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildChatCard(BuildContext context, DocumentSnapshot chat, String type, String userRole) {
+  Widget _buildChatCard(BuildContext context, DocumentSnapshot chat,
+      String type, String userRole) {
     final data = chat.data() as Map<String, dynamic>;
 
     IconData iconData = Icons.public;
@@ -162,11 +169,15 @@ class ChatListScreen extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))
+          BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 4))
         ],
       ),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         leading: Container(
           height: 52,
           width: 52,
@@ -183,7 +194,9 @@ class ChatListScreen extends StatelessWidget {
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 4),
           child: Text(
-            data.containsKey('lastMessage') ? data['lastMessage'] : "No messages yet",
+            data.containsKey('lastMessage')
+                ? data['lastMessage']
+                : "No messages yet",
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(color: Colors.grey[500], fontSize: 14),
@@ -213,8 +226,13 @@ class ChatListScreen extends StatelessWidget {
         if (unread > 0)
           Container(
             padding: const EdgeInsets.all(7),
-            decoration: const BoxDecoration(color: Color(0xFFE74C3C), shape: BoxShape.circle),
-            child: Text("$unread", style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+            decoration: const BoxDecoration(
+                color: Color(0xFFE74C3C), shape: BoxShape.circle),
+            child: Text("$unread",
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold)),
           )
         else
           const SizedBox(height: 25),
@@ -224,7 +242,8 @@ class ChatListScreen extends StatelessWidget {
   }
 
   // --- UPDATED NAVIGATION LOGIC ---
-  void _handleNavigation(BuildContext context, DocumentSnapshot chat, String userRole) async {
+  void _handleNavigation(
+      BuildContext context, DocumentSnapshot chat, String userRole) async {
     final prefs = await SharedPreferences.getInstance();
 
     // 1. Get basic stored data
@@ -234,7 +253,10 @@ class ChatListScreen extends StatelessWidget {
     // 2. Fetch specific student name from Firestore if necessary
     String displayName = storedName;
     if (userRole == 'Student') {
-      var userDoc = await FirebaseFirestore.instance.collection('users').doc(rollNo).get();
+      var userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(rollNo)
+          .get();
       if (userDoc.exists) {
         displayName = userDoc['name'];
       }

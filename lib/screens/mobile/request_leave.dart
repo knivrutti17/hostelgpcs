@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:gpcs_hostel_portal/screens/mobile/style/style.dart';
 import 'package:intl/intl.dart';
 // Ensure these paths match your project structure
 import 'package:gpcs_hostel_portal/screens/mobile/pdfgenerator/leave_pdf_generator.dart';
@@ -18,7 +17,12 @@ class _RequestLeaveState extends State<RequestLeave> {
   DateTimeRange? _selectedDates;
   bool _isLoading = false;
   String? _currentRollNo;
-  final List<String> _reasons = ["Family Function", "Medical Leave", "Going Home", "Other"];
+  final List<String> _reasons = [
+    "Family Function",
+    "Medical Leave",
+    "Going Home",
+    "Other"
+  ];
 
   @override
   void initState() {
@@ -36,7 +40,8 @@ class _RequestLeaveState extends State<RequestLeave> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text("Request Leave", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: const Text("Request Leave",
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         backgroundColor: const Color(0xFF438A7F),
         elevation: 0,
       ),
@@ -60,49 +65,63 @@ class _RequestLeaveState extends State<RequestLeave> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("Reason for Leave:", style: TextStyle(fontWeight: FontWeight.bold)),
+          const Text("Reason for Leave:",
+              style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
-            value: _selectedReason,
-            items: _reasons.map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
+            initialValue: _selectedReason,
+            items: _reasons
+                .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                .toList(),
             onChanged: (val) => setState(() => _selectedReason = val),
             decoration: InputDecoration(
                 filled: true,
                 fillColor: const Color(0xFFF5F7F9),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none)
-            ),
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none)),
           ),
           const SizedBox(height: 20),
-          const Text("Leave Dates:", style: TextStyle(fontWeight: FontWeight.bold)),
+          const Text("Leave Dates:",
+              style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           InkWell(
             onTap: _pickDateRange,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 15),
-              decoration: BoxDecoration(color: const Color(0xFFF5F7F9), borderRadius: BorderRadius.circular(12)),
+              decoration: BoxDecoration(
+                  color: const Color(0xFFF5F7F9),
+                  borderRadius: BorderRadius.circular(12)),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(_selectedDates == null
                       ? "Select Date Range"
                       : "${DateFormat('MMM dd').format(_selectedDates!.start)} - ${DateFormat('MMM dd').format(_selectedDates!.end)}"),
-                  const Icon(Icons.calendar_month, size: 20, color: Colors.grey),
+                  const Icon(Icons.calendar_month,
+                      size: 20, color: Colors.grey),
                 ],
               ),
             ),
           ),
           const SizedBox(height: 25),
           SizedBox(
-            width: double.infinity, height: 50,
+            width: double.infinity,
+            height: 50,
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF438A7F),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
-              ),
-              onPressed: (_isLoading || _currentRollNo == null) ? null : _submitLeave,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12))),
+              onPressed:
+                  (_isLoading || _currentRollNo == null) ? null : _submitLeave,
               child: _isLoading
                   ? const CircularProgressIndicator(color: Colors.white)
-                  : const Text("SUBMIT REQUEST", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                  : const Text("SUBMIT REQUEST",
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1)),
             ),
           ),
         ],
@@ -117,10 +136,14 @@ class _RequestLeaveState extends State<RequestLeave> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           const Text("Recent Leave Requests",
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF2D3436))),
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  color: Color(0xFF2D3436))),
           // Master PDF Icon for Full Report
           IconButton(
-            icon: const Icon(Icons.picture_as_pdf, color: Color(0xFF438A7F), size: 26),
+            icon: const Icon(Icons.picture_as_pdf,
+                color: Color(0xFF438A7F), size: 26),
             onPressed: _downloadFullReport,
             tooltip: "Download All Requests",
           ),
@@ -130,16 +153,25 @@ class _RequestLeaveState extends State<RequestLeave> {
   }
 
   Widget _buildRecentLeavesList() {
-    if (_currentRollNo == null) return const Center(child: CircularProgressIndicator());
+    if (_currentRollNo == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('leaves')
+      stream: FirebaseFirestore.instance
+          .collection('leaves')
           .where('studentUid', isEqualTo: _currentRollNo)
           .orderBy('timestamp', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        if (snapshot.data!.docs.isEmpty) return const Center(child: Text("No requests found", style: TextStyle(color: Colors.grey)));
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.data!.docs.isEmpty) {
+          return const Center(
+              child: Text("No requests found",
+                  style: TextStyle(color: Colors.grey)));
+        }
 
         return ListView.builder(
           padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -155,19 +187,28 @@ class _RequestLeaveState extends State<RequestLeave> {
   }
 
   Widget _buildLeaveCard(Map<String, dynamic> data) {
-    Color statusColor = data['status'] == 'Approved' ? Colors.green : (data['status'] == 'Rejected' ? Colors.red : Colors.orange);
+    Color statusColor = data['status'] == 'Approved'
+        ? Colors.green
+        : (data['status'] == 'Rejected' ? Colors.red : Colors.orange);
+    final rejectReason = (data['rejectReason'] ?? '').toString().trim();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(15),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2))
+        ],
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(15),
         child: Container(
-          decoration: BoxDecoration(border: Border(left: BorderSide(color: statusColor, width: 6))),
+          decoration: BoxDecoration(
+              border: Border(left: BorderSide(color: statusColor, width: 6))),
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
@@ -175,21 +216,61 @@ class _RequestLeaveState extends State<RequestLeave> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(data['reason'] ?? "Reason", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    Text(data['reason'] ?? "Reason",
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16)),
                     const SizedBox(height: 4),
-                    Text("${data['startDate']} to ${data['endDate']}", style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                    Text("${data['startDate']} to ${data['endDate']}",
+                        style:
+                            const TextStyle(fontSize: 13, color: Colors.grey)),
+                    if (data['status'] == 'Rejected' &&
+                        rejectReason.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                              color: Colors.red.withValues(alpha: 0.25)),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.cancel_outlined,
+                                color: Colors.red, size: 16),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                "Rejected: $rejectReason",
+                                style: const TextStyle(
+                                  color: Colors.red,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(data['status'] ?? "Pending", style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 12)),
+                  Text(data['status'] ?? "Pending",
+                      style: TextStyle(
+                          color: statusColor,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12)),
                   const SizedBox(height: 6),
                   // Individual Download Icon
                   InkWell(
                     onTap: () => _downloadSingleSlip(data),
-                    child: const Icon(Icons.download_for_offline_outlined, color: Color(0xFF438A7F), size: 28),
+                    child: const Icon(Icons.download_for_offline_outlined,
+                        color: Color(0xFF438A7F), size: 28),
                   ),
                 ],
               ),
@@ -202,39 +283,59 @@ class _RequestLeaveState extends State<RequestLeave> {
 
   // LOGIC TO DOWNLOAD ALL
   Future<void> _downloadFullReport() async {
-    final studentDoc = await FirebaseFirestore.instance.collection('users').doc(_currentRollNo).get();
-    final allLeaves = await FirebaseFirestore.instance.collection('leaves')
+    final studentDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(_currentRollNo)
+        .get();
+    final allLeaves = await FirebaseFirestore.instance
+        .collection('leaves')
         .where('studentUid', isEqualTo: _currentRollNo)
-        .orderBy('timestamp', descending: true).get();
+        .orderBy('timestamp', descending: true)
+        .get();
 
+    if (!mounted) return;
     if (studentDoc.exists && allLeaves.docs.isNotEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Preparing Table Report...")));
-      await LeaveReportGenerator.generateAllLeavesTable(studentDoc.data()!, allLeaves.docs);
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Preparing Table Report...")));
+      await LeaveReportGenerator.generateAllLeavesTable(
+          studentDoc.data()!, allLeaves.docs);
     }
   }
 
   // LOGIC TO DOWNLOAD SINGLE SLIP
   Future<void> _downloadSingleSlip(Map<String, dynamic> data) async {
-    final studentDoc = await FirebaseFirestore.instance.collection('users').doc(_currentRollNo).get();
+    final studentDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(_currentRollNo)
+        .get();
+    if (!mounted) return;
     if (studentDoc.exists) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Generating Leave Slip...")));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Generating Leave Slip...")));
       await LeavePdfGenerator.generateLeavePdf(studentDoc.data()!, data);
     }
   }
 
   Future<void> _pickDateRange() async {
-    final picked = await showDateRangePicker(context: context, firstDate: DateTime.now(), lastDate: DateTime(2026, 12, 31));
+    final picked = await showDateRangePicker(
+        context: context,
+        firstDate: DateTime.now(),
+        lastDate: DateTime(2026, 12, 31));
     if (picked != null) setState(() => _selectedDates = picked);
   }
 
   Future<void> _submitLeave() async {
     if (_selectedReason == null || _selectedDates == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please fill all fields")));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Please fill all fields")));
       return;
     }
     setState(() => _isLoading = true);
     try {
-      final studentDoc = await FirebaseFirestore.instance.collection('users').doc(_currentRollNo).get();
+      final studentDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(_currentRollNo)
+          .get();
       var sData = studentDoc.data() as Map<String, dynamic>;
 
       await FirebaseFirestore.instance.collection('leaves').add({
@@ -248,8 +349,14 @@ class _RequestLeaveState extends State<RequestLeave> {
         'status': 'Pending',
         'timestamp': FieldValue.serverTimestamp(),
       });
-      setState(() { _selectedReason = null; _selectedDates = null; });
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Leave Requested!"), backgroundColor: Colors.green));
+      setState(() {
+        _selectedReason = null;
+        _selectedDates = null;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("Leave Requested!"), backgroundColor: Colors.green));
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

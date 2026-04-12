@@ -27,21 +27,38 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
         children: [
           // Image View Area
           Expanded(
-            child: Container(
-              width: double.infinity,
+            child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 10),
-              child: kIsWeb
-                  ? Image.network(
-                widget.imageFile.path,
-                fit: BoxFit.contain,
-                // Error handling for web blobs
-                errorBuilder: (context, error, stackTrace) => const Center(
-                  child: Text("Unable to preview image on Web", style: TextStyle(color: Colors.white)),
-                ),
-              )
-                  : Image.file(
-                widget.imageFile,
-                fit: BoxFit.contain,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return InteractiveViewer(
+                    child: SizedBox(
+                      width: constraints.maxWidth,
+                      height: constraints.maxHeight,
+                      child: kIsWeb
+                          ? Image.network(
+                              widget.imageFile.path,
+                              fit: BoxFit.contain,
+                              // Error handling for web blobs
+                              errorBuilder: (context, error, stackTrace) =>
+                                  const Center(
+                                child: Text("Unable to preview image on Web",
+                                    style: TextStyle(color: Colors.white)),
+                              ),
+                            )
+                          : Image.file(
+                              widget.imageFile,
+                              fit: BoxFit.contain,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  const Icon(
+                                Icons.broken_image,
+                                color: Colors.white70,
+                                size: 56,
+                              ),
+                            ),
+                    ),
+                  );
+                },
               ),
             ),
           ),
@@ -50,8 +67,9 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 15),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.8),
-              border: Border(top: BorderSide(color: Colors.white.withOpacity(0.1))),
+              color: Colors.black.withValues(alpha: 0.8),
+              border: Border(
+                  top: BorderSide(color: Colors.white.withValues(alpha: 0.1))),
             ),
             child: SafeArea(
               child: Row(
@@ -69,7 +87,8 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
                           hintText: "Add a caption...",
                           hintStyle: TextStyle(color: Colors.white54),
                           border: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          contentPadding: EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 12),
                         ),
                       ),
                     ),
@@ -83,7 +102,7 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
                       });
                     },
                     child: const CircleAvatar(
-                      backgroundColor: Color(0xFF438A7F),
+                      backgroundColor: Color(0xFF0077C2),
                       radius: 25,
                       child: Icon(Icons.send, color: Colors.white, size: 22),
                     ),

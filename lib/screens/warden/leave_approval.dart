@@ -1,11 +1,11 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/services.dart';
+import 'package:gpcs_hostel_portal/screens/mobile/pdfgenerator/leave_report_generator.dart';
 import 'package:intl/intl.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-import 'package:http/http.dart' as http;
-import 'dart:typed_data'; // <--- ADD THIS LINE TO FIX THE ERROR
 
 class LeaveApprovalView extends StatefulWidget {
   const LeaveApprovalView({
@@ -21,7 +21,8 @@ class LeaveApprovalView extends StatefulWidget {
   State<LeaveApprovalView> createState() => _LeaveApprovalViewState();
 }
 
-class _LeaveApprovalViewState extends State<LeaveApprovalView> with SingleTickerProviderStateMixin {
+class _LeaveApprovalViewState extends State<LeaveApprovalView>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   static const Color portalBlue = Color(0xFF0077C2);
   bool _isGeneratingPdf = false;
@@ -78,7 +79,8 @@ class _LeaveApprovalViewState extends State<LeaveApprovalView> with SingleTicker
                     children: [
                       CircularProgressIndicator(),
                       SizedBox(height: 15),
-                      Text("Preparing Official PDF...", style: TextStyle(fontWeight: FontWeight.bold)),
+                      Text("Preparing Official PDF...",
+                          style: TextStyle(fontWeight: FontWeight.bold)),
                     ],
                   ),
                 ),
@@ -101,7 +103,10 @@ class _LeaveApprovalViewState extends State<LeaveApprovalView> with SingleTicker
         preferredSize: const Size.fromHeight(100),
         child: AppBar(
           title: const Text("Leave Management",
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                  color: Colors.white)),
           backgroundColor: portalBlue,
           elevation: 0,
           centerTitle: true,
@@ -145,12 +150,19 @@ class _LeaveApprovalViewState extends State<LeaveApprovalView> with SingleTicker
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text("Processed Leaves", style: TextStyle(fontWeight: FontWeight.bold, color: portalBlue)),
+              const Text("Processed Leaves",
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold, color: portalBlue)),
               ElevatedButton.icon(
-                onPressed: _isGeneratingPdf ? null : () => _generateHistoryPdf(),
+                onPressed:
+                    _isGeneratingPdf ? null : () => _generateHistoryPdf(),
                 icon: const Icon(Icons.picture_as_pdf, size: 16),
-                label: const Text("EXPORT OFFICIAL PDF", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+                label: const Text("EXPORT OFFICIAL PDF",
+                    style:
+                        TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.redAccent,
+                    foregroundColor: Colors.white),
               )
             ],
           ),
@@ -173,8 +185,10 @@ class _LeaveApprovalViewState extends State<LeaveApprovalView> with SingleTicker
     );
   }
 
-  Widget _buildRequestCard(String docId, Map<String, dynamic> data, {bool isHistory = false}) {
-    String studentId = data['uid'] ?? data['rollNo'] ?? "";
+  Widget _buildRequestCard(String docId, Map<String, dynamic> data,
+      {bool isHistory = false}) {
+    final studentId = _studentIdFromLeave(data);
+    final duration = _leaveDurationLabel(data['startDate'], data['endDate']);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -182,18 +196,23 @@ class _LeaveApprovalViewState extends State<LeaveApprovalView> with SingleTicker
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10)],
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 10)
+        ],
       ),
       child: ExpansionTile(
         tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: CircleAvatar(
-          backgroundColor: portalBlue.withOpacity(0.1),
-          child: const Icon(Icons.person, color: portalBlue),
-        ),
+        leading: _buildStudentAvatar(studentId),
         title: Text(data['studentName'] ?? "Unknown",
-            style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
+            style: const TextStyle(
+                fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
         subtitle: FutureBuilder<DocumentSnapshot>(
-            future: FirebaseFirestore.instance.collection('users').doc(studentId).get(),
+            future: studentId.isEmpty
+                ? null
+                : FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(studentId)
+                    .get(),
             builder: (context, userSnap) {
               String room = data['roomNo']?.toString() ?? "N/A";
               if (userSnap.hasData && userSnap.data!.exists) {
@@ -202,8 +221,7 @@ class _LeaveApprovalViewState extends State<LeaveApprovalView> with SingleTicker
               }
               return Text("Roll: ${data['rollNo'] ?? '--'} • Room $room",
                   style: const TextStyle(fontSize: 12));
-            }
-        ),
+            }),
         trailing: _statusBadge(data['status']),
         children: [
           Padding(
@@ -211,21 +229,39 @@ class _LeaveApprovalViewState extends State<LeaveApprovalView> with SingleTicker
             child: Column(
               children: [
                 const Divider(),
-                _detailRow(Icons.calendar_today, "Duration", "${data['startDate']} to ${data['endDate']}"),
-                _detailRow(Icons.info_outline, "Reason", data['reason'] ?? "Other"),
+                _detailRow(Icons.calendar_today, "Leave Dates",
+                    "${data['startDate']} to ${data['endDate']}"),
+                _detailRow(Icons.timelapse, "Duration", duration),
+                _detailRow(
+                    Icons.info_outline, "Reason", data['reason'] ?? "Other"),
+                if (isHistory &&
+                    data['status'] == 'Rejected' &&
+                    (data['rejectReason'] ?? '').toString().trim().isNotEmpty)
+                  _detailRow(
+                    Icons.cancel_outlined,
+                    "Rejection Reason",
+                    data['rejectReason'].toString(),
+                    valueColor: Colors.red,
+                  ),
                 if (!isHistory) ...[
                   const SizedBox(height: 15),
                   Row(
                     children: [
-                      Expanded(child: OutlinedButton(
-                        onPressed: () => _update(docId, 'Rejected'),
-                        style: OutlinedButton.styleFrom(foregroundColor: Colors.red, side: const BorderSide(color: Colors.red)),
+                      Expanded(
+                          child: OutlinedButton(
+                        onPressed: () => _showRejectDialog(docId),
+                        style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.red,
+                            side: const BorderSide(color: Colors.red)),
                         child: const Text("REJECT"),
                       )),
                       const SizedBox(width: 12),
-                      Expanded(child: ElevatedButton(
+                      Expanded(
+                          child: ElevatedButton(
                         onPressed: () => _update(docId, 'Approved'),
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white),
                         child: const Text("APPROVE"),
                       )),
                     ],
@@ -245,20 +281,84 @@ class _LeaveApprovalViewState extends State<LeaveApprovalView> with SingleTicker
     if (status == 'Rejected') color = Colors.red;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
-      child: Text(status ?? "Pending", style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold)),
+      decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(6)),
+      child: Text(status ?? "Pending",
+          style: TextStyle(
+              color: color, fontSize: 10, fontWeight: FontWeight.bold)),
     );
   }
 
-  Widget _detailRow(IconData icon, String label, String value) {
+  Widget _buildStudentAvatar(String studentId) {
+    if (studentId.isEmpty) {
+      return const CircleAvatar(
+        radius: 24,
+        backgroundColor: portalBlue,
+        child: Icon(Icons.person, color: Colors.white),
+      );
+    }
+
+    return FutureBuilder<DocumentSnapshot>(
+      future:
+          FirebaseFirestore.instance.collection('users').doc(studentId).get(),
+      builder: (context, userSnap) {
+        String? base64String;
+        if (userSnap.hasData && userSnap.data!.exists) {
+          final userData = userSnap.data!.data() as Map<String, dynamic>;
+          base64String = userData['photoUrl']?.toString();
+        }
+        final avatarImage = _profileImage(base64String);
+
+        return CircleAvatar(
+          radius: 24,
+          backgroundColor: portalBlue,
+          backgroundImage: avatarImage,
+          child: avatarImage == null
+              ? const Icon(Icons.person, color: Colors.white)
+              : null,
+        );
+      },
+    );
+  }
+
+  ImageProvider? _profileImage(String? base64String) {
+    if (base64String == null || base64String.isEmpty) return null;
+
+    try {
+      return MemoryImage(base64Decode(base64String));
+    } catch (e) {
+      debugPrint("Invalid student profile image: $e");
+      return null;
+    }
+  }
+
+  Widget _detailRow(
+    IconData icon,
+    String label,
+    String value, {
+    Color? valueColor,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
           Icon(icon, size: 14, color: portalBlue),
           const SizedBox(width: 8),
-          Text("$label: ", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-          Expanded(child: Text(value, style: const TextStyle(fontSize: 12))),
+          Text("$label: ",
+              style:
+                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                color: valueColor,
+                fontSize: 12,
+                fontWeight:
+                    valueColor == null ? FontWeight.normal : FontWeight.w600,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -268,102 +368,144 @@ class _LeaveApprovalViewState extends State<LeaveApprovalView> with SingleTicker
     return Center(
       child: Padding(
         padding: const EdgeInsets.only(top: 50),
-        child: Text(msg, style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.w500)),
+        child: Text(msg,
+            style: const TextStyle(
+                color: Colors.grey, fontWeight: FontWeight.w500)),
       ),
     );
   }
 
-  void _update(String id, String status) {
-    FirebaseFirestore.instance.collection('leaves').doc(id).update({
+  String _studentIdFromLeave(Map<String, dynamic> data) {
+    return (data['studentUid'] ?? data['uid'] ?? data['rollNo'] ?? '')
+        .toString();
+  }
+
+  String _leaveDurationLabel(dynamic startValue, dynamic endValue) {
+    final startDate = _parseLeaveDate(startValue);
+    final endDate = _parseLeaveDate(endValue);
+    if (startDate == null || endDate == null) return "N/A";
+
+    final totalDays = endDate.difference(startDate).inDays + 1;
+    if (totalDays <= 0) return "N/A";
+    return "$totalDays ${totalDays == 1 ? 'Day' : 'Days'}";
+  }
+
+  DateTime? _parseLeaveDate(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+
+    final text = value.toString().trim();
+    if (text.isEmpty) return null;
+
+    final formats = [
+      DateFormat('MMM dd yyyy'),
+      DateFormat('MMM d yyyy'),
+      DateFormat('yyyy-MM-dd'),
+      DateFormat('dd-MM-yyyy'),
+    ];
+
+    for (final format in formats) {
+      try {
+        final candidate = text.contains(RegExp(r'\d{4}'))
+            ? text
+            : '$text ${DateTime.now().year}';
+        return format.parseStrict(candidate);
+      } catch (_) {
+        // Try the next supported date shape.
+      }
+    }
+    return null;
+  }
+
+  Future<void> _showRejectDialog(String docId) async {
+    final reasonController = TextEditingController();
+
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text("Reason for Rejection"),
+          content: TextField(
+            controller: reasonController,
+            autofocus: true,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              hintText: "Enter why this leave request is rejected",
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("CANCEL"),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                final text = reasonController.text.trim();
+                if (text.isEmpty) return;
+                Navigator.pop(context, text);
+              },
+              child: const Text("SUBMIT"),
+            ),
+          ],
+        );
+      },
+    );
+
+    reasonController.dispose();
+    if (reason == null || reason.isEmpty) return;
+    _update(docId, 'Rejected', rejectReason: reason);
+  }
+
+  void _update(String id, String status, {String? rejectReason}) {
+    final updateData = <String, dynamic>{
       'status': status,
       'processedAt': FieldValue.serverTimestamp(),
-    });
+    };
+
+    if (status == 'Rejected') {
+      updateData['rejectReason'] = rejectReason ?? '';
+    } else {
+      updateData['rejectReason'] = FieldValue.delete();
+    }
+
+    FirebaseFirestore.instance.collection('leaves').doc(id).update(updateData);
   }
 
   Future<void> _generateHistoryPdf() async {
     setState(() => _isGeneratingPdf = true);
 
     try {
-      final pdf = pw.Document();
-
       final historySnap = await _historyStream().get();
       final filteredDocs = await _filterDocsForBranch(historySnap.docs);
 
-      Uint8List? logoBytes;
-      try {
-        final response = await http.get(Uri.parse('https://upload.wikimedia.org/wikipedia/en/5/52/Government_Polytechnic%2C_Aurangabad_logo.png')).timeout(const Duration(seconds: 5));
-        if (response.statusCode == 200) logoBytes = response.bodyBytes;
-      } catch (e) {
-        debugPrint("Logo fetch failed: $e");
-      }
+      final logoData = await rootBundle.load('assets/images/gpcslogo.png');
+      final Uint8List logoBytes = logoData.buffer.asUint8List();
 
-      pdf.addPage(pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(32),
-        build: (pw.Context context) => [
-          pw.Row(
-            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-            children: [
-              if (logoBytes != null) pw.Image(pw.MemoryImage(logoBytes), width: 60, height: 60),
-              pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.end,
-                children: [
-                  pw.Text("Government Polytechnic, Chh. Sambhajinagar",
-                      style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
-                  pw.Text("Hostel Administration Department",
-                      style: const pw.TextStyle(fontSize: 11)),
-                  pw.Text("Official Leave History Report",
-                      style: pw.TextStyle(fontSize: 11, color: PdfColors.blue900, fontWeight: pw.FontWeight.bold)),
-                  pw.Text("Generated on: ${DateFormat('dd-MM-yyyy HH:mm').format(DateTime.now())}", style: const pw.TextStyle(fontSize: 9)),
-                ],
-              ),
-            ],
-          ),
-          pw.Divider(thickness: 1.5, color: PdfColors.grey),
-          pw.SizedBox(height: 20),
+      final leaves =
+          await LeaveReportGenerator.buildLeaveModelsWithRooms(filteredDocs);
 
-          pw.TableHelper.fromTextArray(
-            border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
-            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white, fontSize: 10),
-            headerDecoration: const pw.BoxDecoration(color: PdfColors.blue900),
-            cellStyle: const pw.TextStyle(fontSize: 9),
-            cellHeight: 25,
-            headers: ['Student Name', 'Room', 'Status', 'Start Date', 'End Date'],
-            data: filteredDocs.map((doc) {
-              var d = doc.data() as Map<String, dynamic>;
-              return [
-                d['studentName'] ?? "N/A",
-                d['roomNo']?.toString() ?? "--",
-                d['status'] ?? "N/A",
-                d['startDate'] ?? "--",
-                d['endDate'] ?? "--",
-              ];
-            }).toList(),
-          ),
-
-          pw.Spacer(),
-          pw.Align(
-              alignment: pw.Alignment.centerRight,
-              child: pw.Column(
-                  children: [
-                    pw.SizedBox(height: 40),
-                    pw.Text("__________________________", style: const pw.TextStyle(fontSize: 10)),
-                    pw.Text("Warden Signature", style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)),
-                    pw.Text("GP Chh. Sambhajinagar", style: const pw.TextStyle(fontSize: 9)),
-                  ]
-              )
-          )
-        ],
-      ));
+      final pdfBytes = await LeaveReportGenerator.generateLeavePdf(
+        leaves,
+        logoBytes,
+        logoBytes,
+      );
 
       await Printing.layoutPdf(
-          onLayout: (PdfPageFormat format) async => pdf.save(),
-          name: 'Leave_History_${DateFormat('dd_MM_yyyy').format(DateTime.now())}.pdf'
-      );
+          onLayout: (format) async => pdfBytes,
+          name:
+              'Leave_History_${DateFormat('dd_MM_yyyy').format(DateTime.now())}.pdf');
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Failed to generate PDF: $e"), backgroundColor: Colors.red),
+          SnackBar(
+              content: Text("Failed to generate PDF: $e"),
+              backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -407,22 +549,22 @@ class _LeaveApprovalViewState extends State<LeaveApprovalView> with SingleTicker
     }
 
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('users')
-          .snapshots(),
+      stream: FirebaseFirestore.instance.collection('users').snapshots(),
       builder: (context, userSnapshot) {
         if (!userSnapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
 
-        final allowedIds = userSnapshot.data!.docs.where((doc) {
-          final data = doc.data() as Map<String, dynamic>;
-          final role = (data['role'] ?? '').toString().toLowerCase();
-          final branch = (data['branch'] ?? data['brach'] ?? '')
-              .toString()
-              .trim();
-          return role == 'student' && branch == widget.branchFilter;
-        }).map((doc) => doc.id).toSet();
+        final allowedIds = userSnapshot.data!.docs
+            .where((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              final role = (data['role'] ?? '').toString().toLowerCase();
+              final branch =
+                  (data['branch'] ?? data['brach'] ?? '').toString().trim();
+              return role == 'student' && branch == widget.branchFilter;
+            })
+            .map((doc) => doc.id)
+            .toSet();
 
         return StreamBuilder<QuerySnapshot>(
           stream: stream,
@@ -450,23 +592,26 @@ class _LeaveApprovalViewState extends State<LeaveApprovalView> with SingleTicker
     );
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _filterDocsForBranch(
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+      _filterDocsForBranch(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
   ) async {
     if (widget.branchFilter == null) {
       return docs;
     }
 
-    final usersSnap = await FirebaseFirestore.instance
-        .collection('users')
-        .get();
-    final allowedIds = usersSnap.docs.where((doc) {
-      final data = doc.data();
-      final role = (data['role'] ?? '').toString().toLowerCase();
-      final branch =
-          (data['branch'] ?? data['brach'] ?? '').toString().trim();
-      return role == 'student' && branch == widget.branchFilter;
-    }).map((doc) => doc.id).toSet();
+    final usersSnap =
+        await FirebaseFirestore.instance.collection('users').get();
+    final allowedIds = usersSnap.docs
+        .where((doc) {
+          final data = doc.data();
+          final role = (data['role'] ?? '').toString().toLowerCase();
+          final branch =
+              (data['branch'] ?? data['brach'] ?? '').toString().trim();
+          return role == 'student' && branch == widget.branchFilter;
+        })
+        .map((doc) => doc.id)
+        .toSet();
 
     return docs.where((doc) {
       final data = doc.data();
